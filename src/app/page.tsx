@@ -20,12 +20,14 @@ import { WishlistSection } from "@/components/WishlistSection";
 import { ExpensesSection } from "@/components/ExpensesSection";
 import { ChoresSection } from "@/components/ChoresSection";
 import { MobileBottomNav } from "@/components/MobileBottomNav";
+import { LockScreen } from "@/components/LockScreen";
 import { DepositModal } from "@/components/DepositModal";
 import { GoalModal } from "@/components/GoalModal";
 import { WishlistModal } from "@/components/WishlistModal";
 import { ExpenseModal } from "@/components/ExpenseModal";
 
 export default function DashboardPage() {
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"geral" | "aportes" | "metas" | "enxoval" | "contas" | "tarefas">("geral");
@@ -37,6 +39,16 @@ export default function DashboardPage() {
   const [goalModalOpen, setGoalModalOpen] = useState(false);
   const [wishlistModalOpen, setWishlistModalOpen] = useState(false);
   const [expenseModalOpen, setExpenseModalOpen] = useState(false);
+
+  // Check auth session
+  useEffect(() => {
+    const savedAuth = localStorage.getItem("nossoape_auth");
+    if (savedAuth === "true") {
+      setIsAuthenticated(true);
+    } else {
+      setIsAuthenticated(false);
+    }
+  }, []);
 
   const fetchData = async () => {
     try {
@@ -54,8 +66,15 @@ export default function DashboardPage() {
   };
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    if (isAuthenticated) {
+      fetchData();
+    }
+  }, [isAuthenticated]);
+
+  const handleLockApp = () => {
+    localStorage.removeItem("nossoape_auth");
+    setIsAuthenticated(false);
+  };
 
   const handleOpenDepositModal = (userId?: string, goalId?: string) => {
     setSelectedUserIdForDeposit(userId);
@@ -212,6 +231,15 @@ export default function DashboardPage() {
     }
   };
 
+  // Auth Gate
+  if (isAuthenticated === null) {
+    return null; // Flash avoidance
+  }
+
+  if (!isAuthenticated) {
+    return <LockScreen onUnlock={() => setIsAuthenticated(true)} />;
+  }
+
   if (loading && !data) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 gap-3">
@@ -249,14 +277,15 @@ export default function DashboardPage() {
         onOpenGoalModal={() => setGoalModalOpen(true)}
         onOpenWishlistModal={() => setWishlistModalOpen(true)}
         onOpenExpenseModal={() => setExpenseModalOpen(true)}
+        onLockApp={handleLockApp}
       />
 
       {/* Main Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-6 space-y-6">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-5 sm:space-y-6">
         {/* Metric Cards Banner */}
         <MetricCards summary={data.summary} />
 
-        {/* Desktop Navigation Tabs (Hidden on mobile because of Bottom Nav) */}
+        {/* Desktop Navigation Tabs */}
         <div className="hidden sm:flex items-center gap-1.5 overflow-x-auto pb-1 border-b border-slate-200">
           <button
             onClick={() => setActiveTab("geral")}
