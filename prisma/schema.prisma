@@ -1,0 +1,125 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String         @id @default(uuid())
+  name          String
+  email         String         @unique
+  avatarColor   String         @default("#3b82f6") // hex color code
+  role          String         @default("OWNER")
+  monthlyTarget Float          @default(2500.0) // default monthly commitment target
+  contributions Contribution[]
+  expenses      Expense[]
+  wishlistItems WishlistItem[]
+  chores        Chore[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+}
+
+model Apartment {
+  id            String         @id @default(uuid())
+  name          String         @default("Nosso Novo Apê")
+  address       String?
+  targetDate    DateTime?      // Data prevista de entrega das chaves ou mudança
+  totalBudget   Float          @default(150000.0) // Meta patrimonial planejada total
+  inviteCode    String         @default("APE-2026")
+  goals         Goal[]
+  contributions Contribution[]
+  expenses      Expense[]
+  wishlistItems WishlistItem[]
+  chores        Chore[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+}
+
+model Goal {
+  id            String         @id @default(uuid())
+  apartmentId   String
+  apartment     Apartment      @relation(fields: [apartmentId], references: [id], onDelete: Cascade)
+  title         String
+  description   String?
+  category      String         @default("GERAL") // ENTRADA, REFORMA, MARCENARIA, ELETROS, DOCUMENTACAO, RESERVA, OUTRO
+  targetAmount  Float
+  color         String         @default("#10b981")
+  icon          String         @default("PiggyBank")
+  deadline      DateTime?
+  contributions Contribution[]
+  isCompleted   Boolean        @default(false)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+}
+
+model Contribution {
+  id          String    @id @default(uuid())
+  apartmentId String
+  apartment   Apartment @relation(fields: [apartmentId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  goalId      String?
+  goal        Goal?     @relation(fields: [goalId], references: [id], onDelete: SetNull)
+  amount      Float
+  date        DateTime  @default(now())
+  notes       String?
+  receiptUrl  String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Expense {
+  id          String    @id @default(uuid())
+  apartmentId String
+  apartment   Apartment @relation(fields: [apartmentId], references: [id], onDelete: Cascade)
+  paidById    String
+  paidBy      User      @relation(fields: [paidById], references: [id], onDelete: Cascade)
+  title       String
+  category    String    @default("OUTRO") // PARCELA_IMOVEL, CONDOMINIO, LUZ, AGUA, GAS, INTERNET, MERCADO, REFORMA, OUTRO
+  amount      Float
+  dueDate     DateTime
+  paidDate    DateTime?
+  splitType   String    @default("EQUAL_50_50") // EQUAL_50_50, PROPORTIONAL, FULL_USER, CUSTOM
+  isPaid      Boolean   @default(false)
+  notes       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model WishlistItem {
+  id             String    @id @default(uuid())
+  apartmentId    String
+  apartment      Apartment @relation(fields: [apartmentId], references: [id], onDelete: Cascade)
+  room           String    @default("SALA") // SALA, COZINHA, QUARTO_CASAL, BANHEIRO, VARANDA, LAVANDERIA, ESCRITORIO, GERAL
+  name           String
+  category       String    @default("MOVEIS") // MOVEIS, ELETRODOMESTICOS, ILUMINACAO, DECORACAO, REFORMA, UTENSILIOS
+  estimatedPrice Float
+  actualPrice    Float?
+  status         String    @default("DESEJO") // DESEJO, COTADO, COMPRADO, ENTREGUE
+  priority       String    @default("MEDIA") // ALTA, MEDIA, BAIXA
+  productUrl     String?
+  imageUrl       String?
+  boughtById     String?
+  boughtBy       User?     @relation(fields: [boughtById], references: [id], onDelete: SetNull)
+  boughtDate     DateTime?
+  notes          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+model Chore {
+  id           String    @id @default(uuid())
+  apartmentId  String
+  apartment    Apartment @relation(fields: [apartmentId], references: [id], onDelete: Cascade)
+  title        String
+  assignedToId String?
+  assignedTo   User?     @relation(fields: [assignedToId], references: [id], onDelete: SetNull)
+  frequency    String    @default("SEMANAL") // DIARIA, SEMANAL, QUINZENAL, MENSAL
+  isDone       Boolean   @default(false)
+  lastDoneAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
