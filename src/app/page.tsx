@@ -10,7 +10,7 @@ import {
   CheckSquare,
   TrendingUp,
 } from "lucide-react";
-import { DashboardData } from "@/types";
+import { DashboardData, Contribution, Goal, Expense, WishlistItem, Chore } from "@/types";
 import { Header } from "@/components/Header";
 import { MetricCards } from "@/components/MetricCards";
 import { AportesSection } from "@/components/AportesSection";
@@ -25,6 +25,7 @@ import { DepositModal } from "@/components/DepositModal";
 import { GoalModal } from "@/components/GoalModal";
 import { WishlistModal } from "@/components/WishlistModal";
 import { ExpenseModal } from "@/components/ExpenseModal";
+import { getLocalData, saveLocalData, recalculateDashboard } from "@/lib/storage";
 
 export default function DashboardPage() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
@@ -53,14 +54,24 @@ export default function DashboardPage() {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const res = await fetch("/api/dashboard");
+      // Try API first
+      const res = await fetch("/api/dashboard", { cache: "no-store" });
       if (res.ok) {
         const json = await res.json();
-        setData(json);
+        if (json && json.apartment) {
+          const recalculated = recalculateDashboard(json);
+          setData(recalculated);
+          saveLocalData(recalculated);
+          return;
+        }
       }
     } catch (err) {
-      console.error("Erro ao carregar dados:", err);
+      console.warn("API indisponível, usando armazenamento local:", err);
     } finally {
+      // Fallback robusto garantido para armazenamento local
+      const local = getLocalData();
+      const recalculated = recalculateDashboard(local);
+      setData(recalculated);
       setLoading(false);
     }
   };
@@ -70,6 +81,12 @@ export default function DashboardPage() {
       fetchData();
     }
   }, [isAuthenticated]);
+
+  const updateAndPersist = (updated: DashboardData) => {
+    const recalculated = recalculateDashboard(updated);
+    setData(recalculated);
+    saveLocalData(recalculated);
+  };
 
   const handleLockApp = () => {
     localStorage.removeItem("nossoape_auth");
@@ -82,6 +99,10 @@ export default function DashboardPage() {
     setDepositModalOpen(true);
   };
 
+  const handleDepositSuccess = (newContrib?: any) => {
+    fetchData();
+  };
+
   const handleUpdateUserTarget = async (userId: string, currentTarget: number) => {
     const newVal = prompt("Digite o novo valor da meta mensal de aporte (R$):", currentTarget > 0 ? String(currentTarget) : "");
     if (newVal === null) return;
@@ -91,36 +112,40 @@ export default function DashboardPage() {
       return;
     }
 
+    if (data) {
+      const updatedUsers = data.users.map((u) => (u.id === userId ? { ...u, monthlyTarget: parsed } : u));
+      updateAndPersist({ ...data, users: updatedUsers });
+    }
+
     try {
       await fetch("/api/users", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: userId, monthlyTarget: parsed }),
       });
-      fetchData();
-    } catch (e) {
-      console.error(e);
-    }
+    } catch (e) {}
   };
 
   const handleDeleteContribution = async (id: string) => {
     if (!confirm("Deseja realmente remover este aporte?")) return;
+    if (data) {
+      const filtered = (data.recentContributions || []).filter((c) => c.id !== id);
+      updateAndPersist({ ...data, recentContributions: filtered });
+    }
     try {
       await fetch(`/api/contributions?id=${id}`, { method: "DELETE" });
-      fetchData();
-    } catch (e) {
-      console.error(e);
-    }
+    } catch (e) {}
   };
 
   const handleDeleteGoal = async (id: string) => {
     if (!confirm("Deseja realmente excluir esta caixinha/meta?")) return;
+    if (data) {
+      const filtered = (data.goals || []).filter((g) => g.id !== id);
+      updateAndPersist({ ...data, goals: filtered });
+    }
     try {
       await fetch(`/api/goals?id=${id}`, { method: "DELETE" });
-      fetchData();
-    } catch (e) {
-      console.error(e);
-    }
+    } catch (e) {}
   };
 
   const handleEditGoalTarget = async (id: string, currentTarget: number, currentTitle: string) => {
@@ -132,39 +157,43 @@ export default function DashboardPage() {
       return;
     }
 
+    if (data) {
+      const updatedGoals = data.goals.map((g) => (g.id === id ? { ...g, targetAmount: parsed } : g));
+      updateAndPersist({ ...data, goals: updatedGoals });
+    }
+
     try {
       await fetch("/api/goals", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, targetAmount: parsed }),
       });
-      fetchData();
-    } catch (e) {
-      console.error(e);
-    }
+    } catch (e) {}
   };
 
   const handleDeleteExpense = async (id: string) => {
     if (!confirm("Deseja realmente excluir esta despesa?")) return;
+    if (data) {
+      const filtered = (data.expenses || []).filter((e) => e.id !== id);
+      updateAndPersist({ ...data, expenses: filtered });
+    }
     try {
       await fetch(`/api/expenses?id=${id}`, { method: "DELETE" });
-      fetchData();
-    } catch (e) {
-      console.error(e);
-    }
+    } catch (e) {}
   };
 
   const handleToggleExpensePaid = async (id: string, currentStatus: boolean) => {
+    if (data) {
+      const updatedExpenses = data.expenses.map((e) => (e.id === id ? { ...e, isPaid: !currentStatus } : e));
+      updateAndPersist({ ...data, expenses: updatedExpenses });
+    }
     try {
       await fetch("/api/expenses", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, isPaid: !currentStatus }),
       });
-      fetchData();
-    } catch (e) {
-      console.error(e);
-    }
+    } catch (e) {}
   };
 
   const handleUpdateWishlistStatus = async (
@@ -173,67 +202,82 @@ export default function DashboardPage() {
     actualPrice?: number,
     boughtById?: string
   ) => {
+    if (data) {
+      const updatedList = data.wishlist.map((item) =>
+        item.id === id ? { ...item, status: status as any, actualPrice: actualPrice ?? item.actualPrice, boughtById } : item
+      );
+      updateAndPersist({ ...data, wishlist: updatedList });
+    }
     try {
       await fetch("/api/wishlist", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, status, actualPrice, boughtById }),
       });
-      fetchData();
-    } catch (e) {
-      console.error(e);
-    }
+    } catch (e) {}
   };
 
   const handleDeleteWishlistItem = async (id: string) => {
     if (!confirm("Remover este item da lista de compras?")) return;
+    if (data) {
+      const filtered = data.wishlist.filter((i) => i.id !== id);
+      updateAndPersist({ ...data, wishlist: filtered });
+    }
     try {
       await fetch(`/api/wishlist?id=${id}`, { method: "DELETE" });
-      fetchData();
-    } catch (e) {
-      console.error(e);
-    }
+    } catch (e) {}
   };
 
   const handleToggleChore = async (id: string, currentDone: boolean) => {
+    if (data) {
+      const updatedChores = data.chores.map((c) => (c.id === id ? { ...c, isDone: !currentDone } : c));
+      updateAndPersist({ ...data, chores: updatedChores });
+    }
     try {
       await fetch("/api/chores", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, isDone: !currentDone }),
       });
-      fetchData();
-    } catch (e) {
-      console.error(e);
-    }
+    } catch (e) {}
   };
 
   const handleAddChore = async (title: string, assignedToId?: string) => {
+    const newChore: Chore = {
+      id: "chore-" + Date.now(),
+      apartmentId: data?.apartment.id || "default-ape",
+      title,
+      assignedToId: assignedToId || null,
+      assignedTo: data?.users.find((u) => u.id === assignedToId) || null,
+      frequency: "SEMANAL",
+      isDone: false,
+    };
+    if (data) {
+      updateAndPersist({ ...data, chores: [newChore, ...(data.chores || [])] });
+    }
     try {
       await fetch("/api/chores", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title, assignedToId }),
       });
-      fetchData();
-    } catch (e) {
-      console.error(e);
-    }
+    } catch (e) {}
   };
 
   const handleDeleteChore = async (id: string) => {
     if (!confirm("Deseja realmente remover esta tarefa?")) return;
+    if (data) {
+      const filtered = data.chores.filter((c) => c.id !== id);
+      updateAndPersist({ ...data, chores: filtered });
+    }
     try {
       await fetch(`/api/chores?id=${id}`, { method: "DELETE" });
-      fetchData();
-    } catch (e) {
-      console.error(e);
-    }
+    } catch (e) {}
   };
 
   // Auth Gate
   if (isAuthenticated === null) {
-    return null; // Flash avoidance
+    return null;
   }
 
   if (!isAuthenticated) {
@@ -253,26 +297,14 @@ export default function DashboardPage() {
     );
   }
 
-  if (!data) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center p-4">
-        <p className="text-slate-600 mb-4">Não foi possível carregar as informações do apê.</p>
-        <button
-          onClick={fetchData}
-          className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-sm font-bold"
-        >
-          Tentar Novamente
-        </button>
-      </div>
-    );
-  }
+  const currentData = data || getLocalData();
 
   return (
     <div className="min-h-screen flex flex-col bg-[#f8fafc] pb-20 sm:pb-0">
       {/* Header */}
       <Header
-        apartment={data.apartment}
-        users={data.users}
+        apartment={currentData.apartment}
+        users={currentData.users}
         onOpenDepositModal={() => handleOpenDepositModal()}
         onOpenGoalModal={() => setGoalModalOpen(true)}
         onOpenWishlistModal={() => setWishlistModalOpen(true)}
@@ -283,7 +315,7 @@ export default function DashboardPage() {
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-5 sm:space-y-6">
         {/* Metric Cards Banner */}
-        <MetricCards summary={data.summary} />
+        <MetricCards summary={currentData.summary} />
 
         {/* Desktop Navigation Tabs */}
         <div className="hidden sm:flex items-center gap-1.5 overflow-x-auto pb-1 border-b border-slate-200">
@@ -320,7 +352,7 @@ export default function DashboardPage() {
             }`}
           >
             <Target className="w-4 h-4" />
-            <span>Metas & Caixinhas ({data.goals.length})</span>
+            <span>Metas & Caixinhas ({currentData.goals.length})</span>
           </button>
 
           <button
@@ -332,7 +364,7 @@ export default function DashboardPage() {
             }`}
           >
             <ShoppingBag className="w-4 h-4" />
-            <span>Enxoval & Móveis ({data.wishlist.length})</span>
+            <span>Enxoval & Móveis ({currentData.wishlist.length})</span>
           </button>
 
           <button
@@ -365,9 +397,9 @@ export default function DashboardPage() {
           <div className="space-y-6">
             {/* Casal monthly status summary */}
             <AportesSection
-              partners={data.partners}
-              recentContributions={data.recentContributions}
-              goals={data.goals}
+              partners={currentData.partners}
+              recentContributions={currentData.recentContributions}
+              goals={currentData.goals}
               onOpenDepositModal={handleOpenDepositModal}
               onDeleteContribution={handleDeleteContribution}
               onUpdateUserTarget={handleUpdateUserTarget}
@@ -375,16 +407,16 @@ export default function DashboardPage() {
 
             {/* Graphs */}
             <HistoryCharts
-              monthlyHistory={data.monthlyHistory}
-              users={data.users}
-              totalSaved={data.summary.totalSaved}
+              monthlyHistory={currentData.monthlyHistory}
+              users={currentData.users}
+              totalSaved={currentData.summary.totalSaved}
             />
 
             {/* Grid with Goals and Chores */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="lg:col-span-2">
                 <GoalsSection
-                  goals={data.goals.slice(0, 4)}
+                  goals={currentData.goals.slice(0, 4)}
                   onOpenGoalModal={() => setGoalModalOpen(true)}
                   onOpenDepositModal={handleOpenDepositModal}
                   onDeleteGoal={handleDeleteGoal}
@@ -393,8 +425,8 @@ export default function DashboardPage() {
               </div>
               <div>
                 <ChoresSection
-                  chores={data.chores}
-                  users={data.users}
+                  chores={currentData.chores}
+                  users={currentData.users}
                   onToggleChore={handleToggleChore}
                   onAddChore={handleAddChore}
                   onDeleteChore={handleDeleteChore}
@@ -406,9 +438,9 @@ export default function DashboardPage() {
 
         {activeTab === "aportes" && (
           <AportesSection
-            partners={data.partners}
-            recentContributions={data.recentContributions}
-            goals={data.goals}
+            partners={currentData.partners}
+            recentContributions={currentData.recentContributions}
+            goals={currentData.goals}
             onOpenDepositModal={handleOpenDepositModal}
             onDeleteContribution={handleDeleteContribution}
             onUpdateUserTarget={handleUpdateUserTarget}
@@ -417,7 +449,7 @@ export default function DashboardPage() {
 
         {activeTab === "metas" && (
           <GoalsSection
-            goals={data.goals}
+            goals={currentData.goals}
             onOpenGoalModal={() => setGoalModalOpen(true)}
             onOpenDepositModal={handleOpenDepositModal}
             onDeleteGoal={handleDeleteGoal}
@@ -427,8 +459,8 @@ export default function DashboardPage() {
 
         {activeTab === "enxoval" && (
           <WishlistSection
-            wishlist={data.wishlist}
-            users={data.users}
+            wishlist={currentData.wishlist}
+            users={currentData.users}
             onOpenWishlistModal={() => setWishlistModalOpen(true)}
             onUpdateStatus={handleUpdateWishlistStatus}
             onDeleteItem={handleDeleteWishlistItem}
@@ -437,9 +469,9 @@ export default function DashboardPage() {
 
         {activeTab === "contas" && (
           <ExpensesSection
-            expenses={data.expenses}
-            users={data.users}
-            balances={data.balances}
+            expenses={currentData.expenses}
+            users={currentData.users}
+            balances={currentData.balances}
             onOpenExpenseModal={() => setExpenseModalOpen(true)}
             onTogglePaid={handleToggleExpensePaid}
             onDeleteExpense={handleDeleteExpense}
@@ -448,8 +480,8 @@ export default function DashboardPage() {
 
         {activeTab === "tarefas" && (
           <ChoresSection
-            chores={data.chores}
-            users={data.users}
+            chores={currentData.chores}
+            users={currentData.users}
             onToggleChore={handleToggleChore}
             onAddChore={handleAddChore}
             onDeleteChore={handleDeleteChore}
@@ -459,7 +491,7 @@ export default function DashboardPage() {
 
       {/* Footer */}
       <footer className="mt-auto border-t border-slate-200 bg-white py-4 text-center text-xs text-slate-400 hidden sm:block">
-        Nosso Apê 🏠 • Gestão Financeira e Planejamento de Casal (Gabriel & Carol) • Dados persistentes no banco SQLite
+        Nosso Apê 🏠 • Gestão Financeira e Planejamento de Casal (Gabriel & Carol)
       </footer>
 
       {/* Mobile Bottom Navigation Bar */}
@@ -473,11 +505,11 @@ export default function DashboardPage() {
       <DepositModal
         isOpen={depositModalOpen}
         onClose={() => setDepositModalOpen(false)}
-        users={data.users}
-        goals={data.goals}
+        users={currentData.users}
+        goals={currentData.goals}
         initialUserId={selectedUserIdForDeposit}
         initialGoalId={selectedGoalIdForDeposit}
-        onSuccess={fetchData}
+        onSuccess={handleDepositSuccess}
       />
 
       <GoalModal
@@ -495,7 +527,7 @@ export default function DashboardPage() {
       <ExpenseModal
         isOpen={expenseModalOpen}
         onClose={() => setExpenseModalOpen(false)}
-        users={data.users}
+        users={currentData.users}
         onSuccess={fetchData}
       />
     </div>

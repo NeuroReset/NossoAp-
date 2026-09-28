@@ -2,7 +2,8 @@
 
 import React, { useState } from "react";
 import { X, Receipt } from "lucide-react";
-import { User } from "@/types";
+import { User, Expense } from "@/types";
+import { getLocalData, saveLocalData, recalculateDashboard } from "@/lib/storage";
 
 interface ExpenseModalProps {
   isOpen: boolean;
@@ -27,32 +28,49 @@ export function ExpenseModal({ isOpen, onClose, users, onSuccess }: ExpenseModal
     if (!title || !amount || !paidById) return;
 
     setLoading(true);
+    const parsedAmount = parseFloat(amount.replace(",", "."));
+    const paidBy = users.find((u) => u.id === paidById) || users[0];
+
+    const newExpense: Expense = {
+      id: "exp-" + Date.now(),
+      apartmentId: "default-ape",
+      paidById,
+      paidBy,
+      title,
+      category,
+      amount: parsedAmount,
+      dueDate: dueDate ? new Date(dueDate).toISOString() : new Date().toISOString(),
+      splitType: "EQUAL_50_50",
+      isPaid,
+      paidDate: isPaid ? new Date().toISOString() : null,
+    };
+
+    const local = getLocalData();
+    local.expenses = [newExpense, ...(local.expenses || [])];
+    const recalculated = recalculateDashboard(local);
+    saveLocalData(recalculated);
+
+    onSuccess();
+    onClose();
+    setTitle("");
+    setAmount("");
+    setLoading(false);
+
     try {
-      const res = await fetch("/api/expenses", {
+      await fetch("/api/expenses", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title,
           category,
-          amount: parseFloat(amount.replace(",", ".")),
+          amount: parsedAmount,
           dueDate,
           paidById,
           splitType: "EQUAL_50_50",
           isPaid,
         }),
       });
-
-      if (res.ok) {
-        onSuccess();
-        onClose();
-        setTitle("");
-        setAmount("");
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
+    } catch (err) {}
   };
 
   return (

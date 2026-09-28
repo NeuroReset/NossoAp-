@@ -3,7 +3,8 @@
 import React, { useState, useEffect } from "react";
 import { X, PiggyBank, Sparkles } from "lucide-react";
 import confetti from "canvas-confetti";
-import { User as UserType, Goal } from "@/types";
+import { User as UserType, Goal, Contribution } from "@/types";
+import { getLocalData, saveLocalData, recalculateDashboard } from "@/lib/storage";
 
 interface DepositModalProps {
   isOpen: boolean;
@@ -12,7 +13,7 @@ interface DepositModalProps {
   goals: Goal[];
   initialUserId?: string;
   initialGoalId?: string;
-  onSuccess: () => void;
+  onSuccess: (newContrib?: any) => void;
 }
 
 export function DepositModal({
@@ -44,44 +45,64 @@ export function DepositModal({
     if (!userId || !amount) return;
 
     setLoading(true);
+    const parsedAmount = parseFloat(amount.replace(",", "."));
+    const selectedUser = users.find((u) => u.id === userId) || users[0];
+    const selectedGoal = goals.find((g) => g.id === goalId) || null;
+
+    const newContrib: Contribution = {
+      id: "contrib-" + Date.now(),
+      apartmentId: "default-ape",
+      userId,
+      user: selectedUser,
+      goalId: goalId || null,
+      goal: selectedGoal,
+      amount: parsedAmount,
+      date: date ? new Date(date).toISOString() : new Date().toISOString(),
+      notes: notes || null,
+    };
+
+    // Save locally immediately
+    const local = getLocalData();
+    local.recentContributions = [newContrib, ...(local.recentContributions || [])];
+    const recalculated = recalculateDashboard(local);
+    saveLocalData(recalculated);
+
+    // Trigger confetti
     try {
-      const res = await fetch("/api/contributions", {
+      confetti({
+        particleCount: 100,
+        spread: 70,
+        origin: { y: 0.6 },
+      });
+    } catch (e) {}
+
+    onSuccess(newContrib);
+    onClose();
+    setAmount("");
+    setNotes("");
+    setLoading(false);
+
+    // Sync with API in background if possible
+    try {
+      await fetch("/api/contributions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           userId,
           goalId: goalId || null,
-          amount: parseFloat(amount.replace(",", ".")),
+          amount: parsedAmount,
           date,
           notes,
         }),
       });
-
-      if (res.ok) {
-        confetti({
-          particleCount: 100,
-          spread: 70,
-          origin: { y: 0.6 },
-        });
-        onSuccess();
-        onClose();
-        setAmount("");
-        setNotes("");
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
+    } catch (err) {}
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl shadow-2xl border border-slate-100 overflow-hidden max-h-[92vh] overflow-y-auto">
-        {/* Drag Handle indicator for mobile */}
         <div className="sm:hidden w-12 h-1.5 bg-slate-300 rounded-full mx-auto my-2" />
 
-        {/* Modal Header */}
         <div className="bg-emerald-600 p-4 sm:p-5 text-white flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-emerald-500 flex items-center justify-center">
@@ -100,9 +121,7 @@ export function DepositModal({
           </button>
         </div>
 
-        {/* Form */}
         <form onSubmit={handleSubmit} className="p-4 sm:p-5 space-y-4">
-          {/* User Selector */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">
               Quem está aportando?
@@ -131,7 +150,6 @@ export function DepositModal({
             </div>
           </div>
 
-          {/* Amount */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">
               Valor do Aporte (R$)
@@ -152,7 +170,6 @@ export function DepositModal({
             </div>
           </div>
 
-          {/* Goal Selector */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">
               Caixinha / Meta de Destino (Opcional)
@@ -171,7 +188,6 @@ export function DepositModal({
             </select>
           </div>
 
-          {/* Date & Notes */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">Data</label>
@@ -197,7 +213,6 @@ export function DepositModal({
             </div>
           </div>
 
-          {/* Submit Button */}
           <div className="pt-2 pb-2 sm:pb-0">
             <button
               type="submit"

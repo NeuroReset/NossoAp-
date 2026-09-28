@@ -2,6 +2,8 @@
 
 import React, { useState } from "react";
 import { X, ShoppingBag } from "lucide-react";
+import { WishlistItem } from "@/types";
+import { getLocalData, saveLocalData, recalculateDashboard } from "@/lib/storage";
 
 interface WishlistModalProps {
   isOpen: boolean;
@@ -26,34 +28,49 @@ export function WishlistModal({ isOpen, onClose, onSuccess }: WishlistModalProps
     if (!name || !estimatedPrice) return;
 
     setLoading(true);
+    const parsedPrice = parseFloat(estimatedPrice.replace(",", "."));
+
+    const newItem: WishlistItem = {
+      id: "item-" + Date.now(),
+      apartmentId: "default-ape",
+      room,
+      name,
+      category,
+      estimatedPrice: parsedPrice,
+      priority: priority as any,
+      status: "DESEJO",
+      productUrl: productUrl || null,
+      notes: notes || null,
+    };
+
+    const local = getLocalData();
+    local.wishlist = [newItem, ...(local.wishlist || [])];
+    const recalculated = recalculateDashboard(local);
+    saveLocalData(recalculated);
+
+    onSuccess();
+    onClose();
+    setName("");
+    setEstimatedPrice("");
+    setProductUrl("");
+    setNotes("");
+    setLoading(false);
+
     try {
-      const res = await fetch("/api/wishlist", {
+      await fetch("/api/wishlist", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name,
           room,
           category,
-          estimatedPrice: parseFloat(estimatedPrice),
+          estimatedPrice: parsedPrice,
           priority,
           productUrl: productUrl || null,
           notes: notes || null,
         }),
       });
-
-      if (res.ok) {
-        onSuccess();
-        onClose();
-        setName("");
-        setEstimatedPrice("");
-        setProductUrl("");
-        setNotes("");
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
+    } catch (err) {}
   };
 
   return (

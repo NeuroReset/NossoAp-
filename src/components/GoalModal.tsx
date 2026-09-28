@@ -2,6 +2,8 @@
 
 import React, { useState } from "react";
 import { X, Target } from "lucide-react";
+import { Goal } from "@/types";
+import { getLocalData, saveLocalData, recalculateDashboard } from "@/lib/storage";
 
 interface GoalModalProps {
   isOpen: boolean;
@@ -25,44 +27,60 @@ export function GoalModal({ isOpen, onClose, onSuccess }: GoalModalProps) {
     if (!title) return;
 
     setLoading(true);
+    const parsedTarget = parseFloat(targetAmount || "0");
+
+    const newGoal: Goal = {
+      id: "goal-" + Date.now(),
+      apartmentId: "default-ape",
+      title,
+      description: description || null,
+      category,
+      targetAmount: parsedTarget,
+      currentAmount: 0,
+      color,
+      icon:
+        category === "ENTRADA"
+          ? "KeyRound"
+          : category === "REFORMA"
+          ? "Hammer"
+          : category === "MARCENARIA"
+          ? "PaintBucket"
+          : category === "ELETROS"
+          ? "Tv"
+          : category === "DOCUMENTACAO"
+          ? "FileText"
+          : "PiggyBank",
+      deadline: deadline || null,
+      isCompleted: false,
+    };
+
+    const local = getLocalData();
+    local.goals = [...(local.goals || []), newGoal];
+    const recalculated = recalculateDashboard(local);
+    saveLocalData(recalculated);
+
+    onSuccess();
+    onClose();
+    setTitle("");
+    setTargetAmount("");
+    setDescription("");
+    setLoading(false);
+
     try {
-      const res = await fetch("/api/goals", {
+      await fetch("/api/goals", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title,
           description,
           category,
-          targetAmount: parseFloat(targetAmount || "0"),
+          targetAmount: parsedTarget,
           deadline: deadline || null,
           color,
-          icon:
-            category === "ENTRADA"
-              ? "KeyRound"
-              : category === "REFORMA"
-              ? "Hammer"
-              : category === "MARCENARIA"
-              ? "PaintBucket"
-              : category === "ELETROS"
-              ? "Tv"
-              : category === "DOCUMENTACAO"
-              ? "FileText"
-              : "PiggyBank",
+          icon: newGoal.icon,
         }),
       });
-
-      if (res.ok) {
-        onSuccess();
-        onClose();
-        setTitle("");
-        setTargetAmount("");
-        setDescription("");
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
+    } catch (err) {}
   };
 
   const colors = ["#10b981", "#3b82f6", "#8b5cf6", "#f59e0b", "#ec4899", "#06b6d4", "#ef4444"];
