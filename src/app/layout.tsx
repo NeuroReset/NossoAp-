@@ -29,6 +29,23 @@ export default function RootLayout({
   return (
     <html lang="pt-BR" className="h-full bg-slate-50">
       <body className="h-full flex flex-col antialiased text-slate-900 bg-slate-50 selection:bg-emerald-100 selection:text-emerald-900">
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                function purgeNetlify() {
+                  const elements = document.querySelectorAll('netlify-drawer, [data-netlify-badge], [data-netlify-drawer], [class*="netlify-drawer"], iframe[src*="netlify"]');
+                  elements.forEach(el => el.remove());
+                }
+                purgeNetlify();
+                if (window.MutationObserver) {
+                  const observer = new MutationObserver(purgeNetlify);
+                  observer.observe(document.documentElement, { childList: true, subtree: true });
+                }
+              })();
+            `,
+          }}
+        />
         {children}
       </body>
     </html>
