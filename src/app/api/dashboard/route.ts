@@ -3,16 +3,71 @@ import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
+async function getOrCreateApartmentAndUsers() {
+  let apartment = await prisma.apartment.findFirst();
+  if (!apartment) {
+    apartment = await prisma.apartment.create({
+      data: {
+        name: "Nosso Apê 🏠",
+        address: "Endereço em definição",
+        totalBudget: 0.0,
+        inviteCode: "GABRIEL-CAROL",
+      },
+    });
+  }
+
+  let users = await prisma.user.findMany({
+    orderBy: { createdAt: "asc" },
+  });
+
+  if (users.length === 0) {
+    const user1 = await prisma.user.create({
+      data: {
+        name: "Gabriel",
+        email: "gabriel@nossoape.com",
+        avatarColor: "#3b82f6",
+        role: "OWNER",
+        monthlyTarget: 0.0,
+      },
+    });
+
+    const user2 = await prisma.user.create({
+      data: {
+        name: "Carol",
+        email: "carol@nossoape.com",
+        avatarColor: "#ec4899",
+        role: "OWNER",
+        monthlyTarget: 0.0,
+      },
+    });
+
+    users = [user1, user2];
+
+    // Criar metas base
+    const defaultGoals = [
+      { title: "Entrada do Imóvel", description: "Reserva para entrada do financiamento", category: "ENTRADA", targetAmount: 0.0, color: "#10b981", icon: "KeyRound" },
+      { title: "Reforma & Obra", description: "Pisos, iluminação, pintura e reparos", category: "REFORMA", targetAmount: 0.0, color: "#f59e0b", icon: "Hammer" },
+      { title: "Marcenaria Planejada", description: "Armários da cozinha, sala, quartos e banheiros", category: "MARCENARIA", targetAmount: 0.0, color: "#8b5cf6", icon: "PaintBucket" },
+      { title: "Eletrodomésticos", description: "Geladeira, fogão/cooktop, lava e seca, TV", category: "ELETROS", targetAmount: 0.0, color: "#06b6d4", icon: "Tv" },
+      { title: "Documentação & ITBI", description: "Taxas de cartório, escritura e ITBI", category: "DOCUMENTACAO", targetAmount: 0.0, color: "#ef4444", icon: "FileText" },
+    ];
+
+    for (const g of defaultGoals) {
+      await prisma.goal.create({
+        data: {
+          apartmentId: apartment.id,
+          ...g,
+        },
+      });
+    }
+  }
+
+  return { apartment, users };
+}
+
 export async function GET() {
   try {
-    let apartment = await prisma.apartment.findFirst();
-    if (!apartment) {
-      return NextResponse.json({ error: "Apartamento n?o encontrado" }, { status: 404 });
-    }
-
-    const users = await prisma.user.findMany({
-      orderBy: { createdAt: "asc" },
-    });
+    const { apartment, users } = await getOrCreateApartmentAndUsers();
 
     const goalsRaw = await prisma.goal.findMany({
       where: { apartmentId: apartment.id },
@@ -63,7 +118,7 @@ export async function GET() {
         color: g.color,
         icon: g.icon,
         deadline: g.deadline ? g.deadline.toISOString() : null,
-        isCompleted: currentAmount >= g.targetAmount || g.isCompleted,
+        isCompleted: g.targetAmount > 0 ? (currentAmount >= g.targetAmount || g.isCompleted) : false,
         contributionsCount: g.contributions.length,
       };
     });
@@ -94,7 +149,7 @@ export async function GET() {
       const currentMonthTotal = uCurrentMonthContribs.reduce((sum, c) => sum + c.amount, 0);
       const target = u.monthlyTarget;
       const progressPercent = target > 0 ? Math.min(100, Math.round((currentMonthTotal / target) * 100)) : 0;
-      
+
       const uHistoricalContribs = allContributions.filter((c) => c.userId === u.id);
       const historicalTotal = uHistoricalContribs.reduce((sum, c) => sum + c.amount, 0);
       const historicalPercent = totalSaved > 0 ? Math.round((historicalTotal / totalSaved) * 100) : 0;
@@ -111,7 +166,7 @@ export async function GET() {
         target,
         currentMonthTotal,
         progressPercent,
-        isCompleted: currentMonthTotal >= target,
+        isCompleted: target > 0 && currentMonthTotal >= target,
         historicalTotal,
         historicalPercent,
       };
@@ -186,7 +241,6 @@ export async function GET() {
       balances.userAPaid = u1Paid;
       balances.userBPaid = u2Paid;
 
-      // Equal 50/50 split check
       const diff = u1Paid - u2Paid;
       if (Math.abs(diff) > 0.01) {
         balances.isBalanced = false;
