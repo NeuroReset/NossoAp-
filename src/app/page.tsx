@@ -39,6 +39,7 @@ export default function DashboardPage() {
   const [selectedUserIdForDeposit, setSelectedUserIdForDeposit] = useState<string | undefined>();
   const [selectedGoalIdForDeposit, setSelectedGoalIdForDeposit] = useState<string | undefined>();
   const [goalModalOpen, setGoalModalOpen] = useState(false);
+  const [goalToEdit, setGoalToEdit] = useState<Goal | null>(null);
   const [wishlistModalOpen, setWishlistModalOpen] = useState(false);
   const [expenseModalOpen, setExpenseModalOpen] = useState(false);
 
@@ -105,6 +106,16 @@ export default function DashboardPage() {
     setDepositModalOpen(true);
   };
 
+  const handleOpenCreateGoalModal = () => {
+    setGoalToEdit(null);
+    setGoalModalOpen(true);
+  };
+
+  const handleOpenEditGoalModal = (goal: Goal) => {
+    setGoalToEdit(goal);
+    setGoalModalOpen(true);
+  };
+
   const handleDepositSuccess = (newContrib?: any) => {
     const local = getLocalData();
     const recalculated = recalculateDashboard(local);
@@ -162,28 +173,6 @@ export default function DashboardPage() {
 
     try {
       await fetch(`/api/goals?id=${id}`, { method: "DELETE" });
-    } catch (e) {}
-  };
-
-  const handleEditGoalTarget = async (id: string, currentTarget: number, currentTitle: string) => {
-    const newVal = prompt(`Definir novo valor alvo para "${currentTitle}" (R$):`, currentTarget > 0 ? String(currentTarget) : "");
-    if (newVal === null) return;
-    const parsed = parseBRL(newVal);
-    if (parsed < 0) {
-      alert("Valor inválido.");
-      return;
-    }
-
-    const currentData = data || getLocalData();
-    const updatedGoals = currentData.goals.map((g) => (g.id === id ? { ...g, targetAmount: parsed } : g));
-    updateAndPersist({ ...currentData, goals: updatedGoals });
-
-    try {
-      await fetch("/api/goals", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, targetAmount: parsed }),
-      });
     } catch (e) {}
   };
 
@@ -322,7 +311,7 @@ export default function DashboardPage() {
         apartment={currentData.apartment}
         users={currentData.users}
         onOpenDepositModal={() => handleOpenDepositModal()}
-        onOpenGoalModal={() => setGoalModalOpen(true)}
+        onOpenGoalModal={handleOpenCreateGoalModal}
         onOpenWishlistModal={() => setWishlistModalOpen(true)}
         onOpenExpenseModal={() => setExpenseModalOpen(true)}
         onLockApp={handleLockApp}
@@ -434,10 +423,10 @@ export default function DashboardPage() {
               <div className="lg:col-span-2">
                 <GoalsSection
                   goals={currentData.goals.slice(0, 4)}
-                  onOpenGoalModal={() => setGoalModalOpen(true)}
+                  onOpenGoalModal={handleOpenCreateGoalModal}
                   onOpenDepositModal={handleOpenDepositModal}
+                  onEditGoal={handleOpenEditGoalModal}
                   onDeleteGoal={handleDeleteGoal}
-                  onEditGoalTarget={handleEditGoalTarget}
                 />
               </div>
               <div>
@@ -467,10 +456,10 @@ export default function DashboardPage() {
         {activeTab === "metas" && (
           <GoalsSection
             goals={currentData.goals}
-            onOpenGoalModal={() => setGoalModalOpen(true)}
+            onOpenGoalModal={handleOpenCreateGoalModal}
             onOpenDepositModal={handleOpenDepositModal}
+            onEditGoal={handleOpenEditGoalModal}
             onDeleteGoal={handleDeleteGoal}
-            onEditGoalTarget={handleEditGoalTarget}
           />
         )}
 
@@ -531,7 +520,11 @@ export default function DashboardPage() {
 
       <GoalModal
         isOpen={goalModalOpen}
-        onClose={() => setGoalModalOpen(false)}
+        goalToEdit={goalToEdit}
+        onClose={() => {
+          setGoalModalOpen(false);
+          setGoalToEdit(null);
+        }}
         onSuccess={fetchData}
       />
 

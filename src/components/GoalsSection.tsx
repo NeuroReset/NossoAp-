@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Plus, PiggyBank, KeyRound, Hammer, PaintBucket, Tv, FileText, CheckCircle, Calendar, Trash2, Edit2 } from "lucide-react";
+import { Plus, PiggyBank, KeyRound, Hammer, PaintBucket, Tv, FileText, CheckCircle, Calendar, Trash2, Edit2, Sparkles } from "lucide-react";
 import { Goal } from "@/types";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
@@ -9,6 +9,7 @@ interface GoalsSectionProps {
   goals: Goal[];
   onOpenGoalModal: () => void;
   onOpenDepositModal: (userId?: string, goalId?: string) => void;
+  onEditGoal?: (goal: Goal) => void;
   onDeleteGoal?: (id: string) => void;
   onEditGoalTarget?: (id: string, currentTarget: number, currentTitle: string) => void;
 }
@@ -26,6 +27,7 @@ export function GoalsSection({
   goals,
   onOpenGoalModal,
   onOpenDepositModal,
+  onEditGoal,
   onDeleteGoal,
   onEditGoalTarget,
 }: GoalsSectionProps) {
@@ -98,7 +100,7 @@ export function GoalsSection({
             return (
               <div
                 key={goal.id}
-                className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all flex flex-col justify-between relative overflow-hidden"
+                className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all flex flex-col justify-between relative overflow-hidden group"
               >
                 {/* Category Color Accent */}
                 <div
@@ -132,10 +134,19 @@ export function GoalsSection({
                           100%
                         </span>
                       )}
+                      {onEditGoal && (
+                        <button
+                          onClick={() => onEditGoal(goal)}
+                          className="p-1.5 text-slate-400 hover:text-emerald-600 rounded-lg hover:bg-emerald-50 transition-colors"
+                          title="Editar todos os dados da meta"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                       {onDeleteGoal && (
                         <button
                           onClick={() => onDeleteGoal(goal.id)}
-                          className="p-1 text-slate-400 hover:text-red-600 rounded hover:bg-red-50 transition-colors"
+                          className="p-1.5 text-slate-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors"
                           title="Excluir caixinha"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -172,11 +183,11 @@ export function GoalsSection({
                     <div className="flex items-center justify-between text-xs text-slate-500">
                       <div className="flex items-center gap-1">
                         <span>Meta: {hasTarget ? formatCurrency(goal.targetAmount) : "A definir"}</span>
-                        {onEditGoalTarget && (
+                        {onEditGoal && (
                           <button
-                            onClick={() => onEditGoalTarget(goal.id, goal.targetAmount, goal.title)}
-                            className="text-slate-400 hover:text-emerald-600 p-0.5 rounded"
-                            title="Ajustar valor alvo"
+                            onClick={() => onEditGoal(goal)}
+                            className="text-slate-400 hover:text-emerald-600 p-0.5 rounded transition-colors"
+                            title="Editar dados da meta"
                           >
                             <Edit2 className="w-3 h-3" />
                           </button>
@@ -190,17 +201,28 @@ export function GoalsSection({
                 {/* Card Footer */}
                 <div className="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
                   {goal.deadline ? (
-                    <span className="flex items-center gap-1 text-slate-500 text-[11px]">
-                      <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                      Até {formatDate(goal.deadline)}
-                    </span>
+                    <button
+                      onClick={() => onEditGoal && onEditGoal(goal)}
+                      className="flex items-center gap-1 text-slate-500 text-[11px] hover:text-emerald-600 transition-colors"
+                      title="Clique para editar o prazo"
+                    >
+                      <Calendar className="w-3.5 h-3.5 text-emerald-500" />
+                      <span>Até {formatDate(goal.deadline)}</span>
+                    </button>
                   ) : (
-                    <span className="text-slate-400 text-[11px]">Sem prazo fixo</span>
+                    <button
+                      onClick={() => onEditGoal && onEditGoal(goal)}
+                      className="text-slate-400 text-[11px] hover:text-emerald-600 transition-colors flex items-center gap-1"
+                      title="Clique para definir um prazo"
+                    >
+                      <Calendar className="w-3.5 h-3.5 text-slate-300" />
+                      <span>Definir prazo</span>
+                    </button>
                   )}
 
                   <button
                     onClick={() => onOpenDepositModal(undefined, goal.id)}
-                    className="font-semibold text-emerald-600 hover:text-emerald-700 flex items-center gap-1 hover:underline"
+                    className="font-bold text-emerald-600 hover:text-emerald-700 flex items-center gap-1 hover:underline"
                   >
                     <Plus className="w-3.5 h-3.5" />
                     Aportar
