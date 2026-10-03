@@ -5,6 +5,7 @@ import { X, PiggyBank, Sparkles } from "lucide-react";
 import confetti from "canvas-confetti";
 import { User as UserType, Goal, Contribution } from "@/types";
 import { getLocalData, saveLocalData, recalculateDashboard, findCanonicalUser } from "@/lib/storage";
+import { parseBRL } from "@/lib/utils";
 
 interface DepositModalProps {
   isOpen: boolean;
@@ -55,11 +56,11 @@ export function DepositModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!amount) return;
+    if (!amount.trim()) return;
 
-    const parsedAmount = parseFloat(amount.replace(",", "."));
-    if (isNaN(parsedAmount) || parsedAmount <= 0) {
-      alert("Informe um valor de aporte válido.");
+    const parsedAmount = parseBRL(amount);
+    if (parsedAmount <= 0) {
+      alert("Informe um valor de aporte válido maior que zero (Ex: 3.000,11 ou 3000).");
       return;
     }
 
@@ -191,15 +192,16 @@ export function DepositModal({
                 R$
               </div>
               <input
-                type="number"
-                step="0.01"
+                type="text"
+                inputMode="decimal"
                 required
-                placeholder="2.500,00"
+                placeholder="3.000,11"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 className="w-full pl-11 pr-3 py-3 border border-slate-200 rounded-xl text-slate-900 font-black text-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
               />
             </div>
+            <p className="text-[11px] text-slate-400 mt-1">Aceita formato brasileiro (ex: 3.000,11 ou 3000,00)</p>
           </div>
 
           <div>
@@ -248,7 +250,7 @@ export function DepositModal({
           <div className="pt-2 pb-2 sm:pb-0">
             <button
               type="submit"
-              disabled={loading || !amount}
+              disabled={loading || !amount.trim()}
               className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold shadow-md shadow-emerald-600/20 transition-all active:scale-[0.99] flex items-center justify-center gap-1.5"
             >
               <Sparkles className="w-4 h-4" />

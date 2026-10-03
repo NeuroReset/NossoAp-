@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { X, Target } from "lucide-react";
 import { Goal } from "@/types";
 import { getLocalData, saveLocalData, recalculateDashboard } from "@/lib/storage";
+import { parseBRL } from "@/lib/utils";
 
 interface GoalModalProps {
   isOpen: boolean;
@@ -27,7 +28,7 @@ export function GoalModal({ isOpen, onClose, onSuccess }: GoalModalProps) {
     if (!title) return;
 
     setLoading(true);
-    const parsedTarget = parseFloat(targetAmount || "0");
+    const parsedTarget = parseBRL(targetAmount);
 
     const newGoal: Goal = {
       id: "goal-" + Date.now(),
@@ -134,9 +135,9 @@ export function GoalModal({ isOpen, onClose, onSuccess }: GoalModalProps) {
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">Valor Alvo (R$)</label>
               <input
-                type="number"
-                step="0.01"
-                placeholder="25.000,00"
+                type="text"
+                inputMode="decimal"
+                placeholder="25.000,00 ou 5000"
                 value={targetAmount}
                 onChange={(e) => setTargetAmount(e.target.value)}
                 className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none"

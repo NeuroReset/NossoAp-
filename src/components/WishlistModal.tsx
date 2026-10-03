@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { X, ShoppingBag } from "lucide-react";
 import { WishlistItem } from "@/types";
 import { getLocalData, saveLocalData, recalculateDashboard } from "@/lib/storage";
+import { parseBRL } from "@/lib/utils";
 
 interface WishlistModalProps {
   isOpen: boolean;
@@ -25,10 +26,10 @@ export function WishlistModal({ isOpen, onClose, onSuccess }: WishlistModalProps
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !estimatedPrice) return;
+    if (!name || !estimatedPrice.trim()) return;
 
     setLoading(true);
-    const parsedPrice = parseFloat(estimatedPrice.replace(",", "."));
+    const parsedPrice = parseBRL(estimatedPrice);
 
     const newItem: WishlistItem = {
       id: "item-" + Date.now(),
@@ -122,10 +123,10 @@ export function WishlistModal({ isOpen, onClose, onSuccess }: WishlistModalProps
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">Preço Estimado (R$)</label>
               <input
-                type="number"
-                step="0.01"
+                type="text"
+                inputMode="decimal"
                 required
-                placeholder="3.500,00"
+                placeholder="3.500,00 ou 450,00"
                 value={estimatedPrice}
                 onChange={(e) => setEstimatedPrice(e.target.value)}
                 className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none"
@@ -172,8 +173,8 @@ export function WishlistModal({ isOpen, onClose, onSuccess }: WishlistModalProps
 
           <button
             type="submit"
-            disabled={loading}
-            className="w-full py-3.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-sm font-bold shadow-sm transition-all"
+            disabled={loading || !estimatedPrice.trim()}
+            className="w-full py-3.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold shadow-sm transition-all"
           >
             {loading ? "Salvando..." : "Salvar no Enxoval"}
           </button>

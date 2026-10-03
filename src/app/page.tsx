@@ -26,6 +26,7 @@ import { GoalModal } from "@/components/GoalModal";
 import { WishlistModal } from "@/components/WishlistModal";
 import { ExpenseModal } from "@/components/ExpenseModal";
 import { getLocalData, saveLocalData, recalculateDashboard, mergeServerAndLocal } from "@/lib/storage";
+import { parseBRL } from "@/lib/utils";
 
 export default function DashboardPage() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
@@ -118,8 +119,8 @@ export default function DashboardPage() {
 
     const newVal = prompt(`Definir meta mensal de aporte para ${userName} (R$):`, currentTarget > 0 ? String(currentTarget) : "");
     if (newVal === null) return;
-    const parsed = parseFloat(newVal.replace(",", "."));
-    if (isNaN(parsed) || parsed < 0) {
+    const parsed = parseBRL(newVal);
+    if (parsed < 0) {
       alert("Valor inválido.");
       return;
     }
@@ -167,8 +168,8 @@ export default function DashboardPage() {
   const handleEditGoalTarget = async (id: string, currentTarget: number, currentTitle: string) => {
     const newVal = prompt(`Definir novo valor alvo para "${currentTitle}" (R$):`, currentTarget > 0 ? String(currentTarget) : "");
     if (newVal === null) return;
-    const parsed = parseFloat(newVal.replace(",", "."));
-    if (isNaN(parsed) || parsed < 0) {
+    const parsed = parseBRL(newVal);
+    if (parsed < 0) {
       alert("Valor inválido.");
       return;
     }

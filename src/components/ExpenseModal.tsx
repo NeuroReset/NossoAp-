@@ -3,7 +3,8 @@
 import React, { useState } from "react";
 import { X, Receipt } from "lucide-react";
 import { User, Expense } from "@/types";
-import { getLocalData, saveLocalData, recalculateDashboard } from "@/lib/storage";
+import { getLocalData, saveLocalData, recalculateDashboard, findCanonicalUser } from "@/lib/storage";
+import { parseBRL } from "@/lib/utils";
 
 interface ExpenseModalProps {
   isOpen: boolean;
@@ -25,21 +26,26 @@ export function ExpenseModal({ isOpen, onClose, users, onSuccess }: ExpenseModal
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title || !amount || !paidById) return;
+    if (!title || !amount.trim()) return;
+
+    const parsedAmount = parseBRL(amount);
+    if (parsedAmount <= 0) {
+      alert("Informe um valor de conta válido maior que zero.");
+      return;
+    }
 
     setLoading(true);
-    const parsedAmount = parseFloat(amount.replace(",", "."));
-    const paidBy = users.find((u) => u.id === paidById) || users[0];
+    const paidBy = findCanonicalUser(users, paidById) || users[0];
 
     const newExpense: Expense = {
       id: "exp-" + Date.now(),
       apartmentId: "default-ape",
-      paidById,
+      paidById: paidBy.id,
       paidBy,
       title,
       category,
       amount: parsedAmount,
-      dueDate: dueDate ? new Date(dueDate).toISOString() : new Date().toISOString(),
+      dueDate: dueDate ? `${dueDate}T12:00:00.000Z` : new Date().toISOString(),
       splitType: "EQUAL_50_50",
       isPaid,
       paidDate: isPaid ? new Date().toISOString() : null,
@@ -65,7 +71,7 @@ export function ExpenseModal({ isOpen, onClose, users, onSuccess }: ExpenseModal
           category,
           amount: parsedAmount,
           dueDate,
-          paidById,
+          paidById: paidBy.id,
           splitType: "EQUAL_50_50",
           isPaid,
         }),
@@ -124,10 +130,10 @@ export function ExpenseModal({ isOpen, onClose, users, onSuccess }: ExpenseModal
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">Valor (R$)</label>
               <input
-                type="number"
-                step="0.01"
+                type="text"
+                inputMode="decimal"
                 required
-                placeholder="450,00"
+                placeholder="450,00 ou 1.200,50"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none"
@@ -177,8 +183,8 @@ export function ExpenseModal({ isOpen, onClose, users, onSuccess }: ExpenseModal
 
           <button
             type="submit"
-            disabled={loading}
-            className="w-full py-3.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-sm font-bold shadow-sm transition-all"
+            disabled={loading || !amount.trim()}
+            className="w-full py-3.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold shadow-sm transition-all"
           >
             {loading ? "Salvando..." : "Salvar Despesa"}
           </button>
