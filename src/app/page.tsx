@@ -97,9 +97,35 @@ export default function DashboardPage() {
     setLoading(false);
   };
 
+  const handleManualSync = async () => {
+    try {
+      const local = getLocalData();
+      await fetch("/api/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(local),
+      });
+      const res = await fetch("/api/dashboard", { cache: "no-store" });
+      if (res.ok) {
+        const json = await res.json();
+        if (json && json.apartment) {
+          const merged = mergeServerAndLocal(json, local);
+          const recalculated = recalculateDashboard(merged);
+          setData(recalculated);
+          saveLocalData(recalculated);
+        }
+      }
+    } catch (e) {
+      console.warn("Erro ao sincronizar manualmente:", e);
+    }
+  };
+
   useEffect(() => {
     if (isAuthenticated) {
       fetchData();
+      const onFocus = () => fetchData();
+      window.addEventListener("focus", onFocus);
+      return () => window.removeEventListener("focus", onFocus);
     }
   }, [isAuthenticated]);
 
@@ -328,6 +354,7 @@ export default function DashboardPage() {
         onOpenGoalModal={handleOpenCreateGoalModal}
         onOpenWishlistModal={() => setWishlistModalOpen(true)}
         onOpenExpenseModal={() => setExpenseModalOpen(true)}
+        onSync={handleManualSync}
         onLockApp={handleLockApp}
       />
 

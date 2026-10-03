@@ -1,7 +1,7 @@
 "use client";
 
-import React from "react";
-import { Building2, Plus, Sparkles, KeyRound, LogOut } from "lucide-react";
+import React, { useState } from "react";
+import { Building2, Plus, Sparkles, KeyRound, LogOut, Cloud, RefreshCw, Check } from "lucide-react";
 import { Apartment, User } from "@/types";
 import { formatDate } from "@/lib/utils";
 
@@ -12,6 +12,7 @@ interface HeaderProps {
   onOpenGoalModal: () => void;
   onOpenWishlistModal: () => void;
   onOpenExpenseModal: () => void;
+  onSync?: () => Promise<void>;
   onLockApp?: () => void;
 }
 
@@ -19,8 +20,26 @@ export function Header({
   apartment,
   users,
   onOpenDepositModal,
+  onSync,
   onLockApp,
 }: HeaderProps) {
+  const [syncing, setSyncing] = useState(false);
+  const [justSynced, setJustSynced] = useState(false);
+
+  const handleSyncClick = async () => {
+    if (!onSync || syncing) return;
+    setSyncing(true);
+    try {
+      await onSync();
+      setJustSynced(true);
+      setTimeout(() => setJustSynced(false), 2500);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   return (
     <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/80">
       <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
@@ -53,6 +72,32 @@ export function Header({
 
           {/* Right: Couple Avatars & Quick Actions */}
           <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+            {/* Sync Button */}
+            {onSync && (
+              <button
+                onClick={handleSyncClick}
+                disabled={syncing}
+                className={`flex items-center gap-1.5 px-3 py-1.5 sm:py-2 rounded-xl text-xs font-semibold border transition-all ${
+                  justSynced
+                    ? "bg-emerald-50 border-emerald-300 text-emerald-700"
+                    : "bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700"
+                }`}
+                title="Sincronizar dados entre os aparelhos agora"
+              >
+                {justSynced ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                    <span className="hidden sm:inline">Sincronizado!</span>
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className={`w-3.5 h-3.5 text-slate-500 ${syncing ? "animate-spin text-emerald-600" : ""}`} />
+                    <span className="hidden sm:inline">{syncing ? "Sincronizando..." : "Sincronizar"}</span>
+                  </>
+                )}
+              </button>
+            )}
+
             {/* Couple Avatars */}
             <div className="flex items-center -space-x-1.5">
               {users.map((u) => (
