@@ -5,8 +5,9 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const { apartment, users, goals, recentContributions, expenses, wishlist, chores } = body;
+    const rawBody = await req.json();
+    const body = typeof rawBody === "string" ? JSON.parse(rawBody) : rawBody;
+    const { apartment, users, goals, recentContributions, expenses, wishlist, chores } = body || {};
 
     let syncedGoals = 0;
     let syncedContributions = 0;
@@ -15,33 +16,33 @@ export async function POST(req: Request) {
     let syncedChores = 0;
 
     // 1. Apartment
-    let dbApe = await prisma.apartment.findFirst();
+    let dbApe = await prisma.apartment.findFirst().catch(() => null);
     if (!dbApe) {
       dbApe = await prisma.apartment.create({
         data: {
           name: apartment?.name || "Nosso Apê 🏠",
           address: apartment?.address || "Endereço em definição",
-          totalBudget: parseFloat(apartment?.totalBudget || 0),
+          totalBudget: parseFloat(String(apartment?.totalBudget || 0)) || 150000,
           inviteCode: apartment?.inviteCode || "GABRIEL-CAROL",
         },
       });
-    } else if (apartment?.totalBudget && parseFloat(apartment.totalBudget) > 0) {
+    } else if (apartment?.totalBudget && parseFloat(String(apartment.totalBudget)) > 0) {
       await prisma.apartment.update({
         where: { id: dbApe.id },
-        data: { totalBudget: parseFloat(apartment.totalBudget) },
+        data: { totalBudget: parseFloat(String(apartment.totalBudget)) },
       }).catch(() => null);
     }
 
     // 2. Users (Gabriel & Carol)
-    let dbUsers = await prisma.user.findMany();
-    if (dbUsers.length === 0) {
+    let dbUsers = await prisma.user.findMany().catch(() => []);
+    if (!dbUsers || dbUsers.length === 0) {
       const u1 = await prisma.user.create({
         data: {
           name: "Gabriel",
           email: "gabriel@nossoape.com",
           avatarColor: "#3b82f6",
           role: "OWNER",
-          monthlyTarget: parseFloat(users?.find((u: any) => u.name?.toLowerCase().includes("gabriel"))?.monthlyTarget || 0),
+          monthlyTarget: 2500,
         },
       });
       const u2 = await prisma.user.create({
@@ -50,20 +51,10 @@ export async function POST(req: Request) {
           email: "carol@nossoape.com",
           avatarColor: "#ec4899",
           role: "OWNER",
-          monthlyTarget: parseFloat(users?.find((u: any) => u.name?.toLowerCase().includes("carol"))?.monthlyTarget || 0),
+          monthlyTarget: 2500,
         },
       });
       dbUsers = [u1, u2];
-    } else {
-      for (const u of dbUsers) {
-        const matchingLocal = users?.find((lu: any) => lu.name?.toLowerCase().includes(u.name.toLowerCase()));
-        if (matchingLocal && matchingLocal.monthlyTarget !== undefined && parseFloat(matchingLocal.monthlyTarget) > 0) {
-          await prisma.user.update({
-            where: { id: u.id },
-            data: { monthlyTarget: parseFloat(matchingLocal.monthlyTarget) },
-          }).catch(() => null);
-        }
-      }
     }
 
     const gabriel = dbUsers.find((u) => u.name.toLowerCase().includes("gabriel")) || dbUsers[0];
@@ -78,30 +69,31 @@ export async function POST(req: Request) {
     // 3. Goals (Metas / Caixinhas)
     if (goals && Array.isArray(goals)) {
       for (const g of goals) {
-        const targetAmount = parseFloat(g.targetAmount || 0);
-        const existing = await prisma.goal.findFirst({
-          where: {
-            OR: [
-              { id: g.id },
-              { title: g.title },
-            ],
-          },
-        });
+        if (!g || !g.title) continue;
+        const targetAmount = parseFloat(String(g.targetAmount || 0)) || 0;
+        
+        let existing = null;
+        if (g.id) {
+          existing = await prisma.goal.findUnique({ where: { id: String(g.id) } }).catch(() => null);
+        }
+        if (!existing) {
+          existing = await prisma.goal.findFirst({ where: { title: String(g.title) } }).catch(() => null);
+        }
 
         if (!existing) {
           await prisma.goal.create({
             data: {
               apartmentId: dbApe.id,
-              title: g.title,
-              description: g.description || null,
-              category: g.category || "GERAL",
+              title: String(g.title),
+              description: g.description ? String(g.description) : null,
+              category: String(g.category || "GERAL"),
               targetAmount,
-              color: g.color || "#10b981",
-              icon: g.icon || "PiggyBank",
+              color: String(g.color || "#10b981"),
+              icon: String(g.icon || "PiggyBank"),
               deadline: g.deadline ? new Date(g.deadline) : null,
               isCompleted: Boolean(g.isCompleted),
             },
-          }).catch(() => null);
+          }).catch((e) => console.error("Goal create error:", e));
           syncedGoals++;
         } else {
           await prisma.goal.update({
@@ -109,8 +101,8 @@ export async function POST(req: Request) {
             data: {
               ...(targetAmount > 0 && { targetAmount }),
               ...(g.deadline && { deadline: new Date(g.deadline) }),
-              ...(g.description && { description: g.description }),
-              ...(g.color && { color: g.color }),
+              ...(g.description && { description: String(g.description) }),
+              ...(g.color && { color: String(g.color) }),
             },
           }).catch(() => null);
           syncedGoals++;
@@ -121,32 +113,32 @@ export async function POST(req: Request) {
     // 4. Contributions (Aportes)
     if (recentContributions && Array.isArray(recentContributions)) {
       for (const c of recentContributions) {
+        if (!c) continue;
         const uId = resolveUserId(c.userId, c.user?.name);
-        const amount = parseFloat(c.amount);
-        if (amount <= 0) continue;
+        const amount = parseFloat(String(c.amount || 0));
+        if (!amount || isNaN(amount) || amount <= 0) continue;
 
-        const existing = await prisma.contribution.findFirst({
-          where: {
-            OR: [
-              { id: c.id },
-              { AND: [{ userId: uId }, { amount }] },
-            ],
-          },
-        });
+        let existing = null;
+        if (c.id) {
+          existing = await prisma.contribution.findUnique({ where: { id: String(c.id) } }).catch(() => null);
+        }
 
         if (!existing) {
-          let validGoalId = null;
+          let validGoalId: string | null = null;
           if (c.goalId || c.goal?.title) {
             const dbGoal = await prisma.goal.findFirst({
               where: {
                 OR: [
-                  { id: c.goalId || "none" },
-                  { title: c.goal?.title || "none" },
+                  ...(c.goalId ? [{ id: String(c.goalId) }] : []),
+                  ...(c.goal?.title ? [{ title: String(c.goal.title) }] : []),
                 ],
               },
-            });
+            }).catch(() => null);
             if (dbGoal) validGoalId = dbGoal.id;
           }
+
+          const cDate = c.date ? new Date(c.date) : new Date();
+          const validDate = isNaN(cDate.getTime()) ? new Date() : cDate;
 
           await prisma.contribution.create({
             data: {
@@ -154,10 +146,10 @@ export async function POST(req: Request) {
               userId: uId,
               goalId: validGoalId,
               amount,
-              date: c.date ? new Date(c.date) : new Date(),
-              notes: c.notes || null,
+              date: validDate,
+              notes: c.notes ? String(c.notes) : null,
             },
-          }).catch(() => null);
+          }).catch((e) => console.error("Contribution create error:", e));
           syncedContributions++;
         }
       }
@@ -166,33 +158,34 @@ export async function POST(req: Request) {
     // 5. Expenses (Despesas)
     if (expenses && Array.isArray(expenses)) {
       for (const e of expenses) {
+        if (!e || !e.title) continue;
         const uId = resolveUserId(e.paidById, e.paidBy?.name);
-        const amount = parseFloat(e.amount);
-        if (amount <= 0) continue;
+        const amount = parseFloat(String(e.amount || 0));
+        if (!amount || isNaN(amount) || amount <= 0) continue;
 
-        const existing = await prisma.expense.findFirst({
-          where: {
-            OR: [
-              { id: e.id },
-              { AND: [{ title: e.title }, { amount }] },
-            ],
-          },
-        });
+        let existing = null;
+        if (e.id) {
+          existing = await prisma.expense.findUnique({ where: { id: String(e.id) } }).catch(() => null);
+        }
 
         if (!existing) {
+          const eDate = e.dueDate ? new Date(e.dueDate) : new Date();
+          const validDueDate = isNaN(eDate.getTime()) ? new Date() : eDate;
+
           await prisma.expense.create({
             data: {
               apartmentId: dbApe.id,
               paidById: uId,
-              title: e.title,
-              category: e.category || "OUTRO",
+              title: String(e.title),
+              category: String(e.category || "OUTRO"),
               amount,
-              dueDate: e.dueDate ? new Date(e.dueDate) : new Date(),
+              dueDate: validDueDate,
               paidDate: e.isPaid ? new Date() : null,
               isPaid: Boolean(e.isPaid),
-              splitType: e.splitType || "EQUAL_50_50",
+              splitType: String(e.splitType || "EQUAL_50_50"),
+              notes: e.notes ? String(e.notes) : null,
             },
-          }).catch(() => null);
+          }).catch((e) => console.error("Expense create error:", e));
           syncedExpenses++;
         }
       }
@@ -201,31 +194,33 @@ export async function POST(req: Request) {
     // 6. Wishlist (Enxoval)
     if (wishlist && Array.isArray(wishlist)) {
       for (const w of wishlist) {
-        if (!w.name) continue;
-        const existing = await prisma.wishlistItem.findFirst({
-          where: {
-            OR: [
-              { id: w.id },
-              { name: w.name },
-            ],
-          },
-        });
+        if (!w || !w.name) continue;
+        let existing = null;
+        if (w.id) {
+          existing = await prisma.wishlistItem.findUnique({ where: { id: String(w.id) } }).catch(() => null);
+        }
+        if (!existing) {
+          existing = await prisma.wishlistItem.findFirst({ where: { name: String(w.name) } }).catch(() => null);
+        }
 
         if (!existing) {
+          const estimatedPrice = parseFloat(String(w.estimatedPrice || 0)) || 0;
+          const actualPrice = w.actualPrice ? parseFloat(String(w.actualPrice)) : null;
+
           await prisma.wishlistItem.create({
             data: {
               apartmentId: dbApe.id,
-              name: w.name,
-              room: w.room || "SALA",
-              category: w.category || "MOVEIS",
-              estimatedPrice: parseFloat(w.estimatedPrice || 0),
-              actualPrice: w.actualPrice ? parseFloat(w.actualPrice) : null,
-              status: w.status || "DESEJO",
-              priority: w.priority || "ALTA",
-              productUrl: w.productUrl || null,
-              notes: w.notes || null,
+              name: String(w.name),
+              room: String(w.room || "SALA"),
+              category: String(w.category || "MOVEIS"),
+              estimatedPrice,
+              actualPrice: actualPrice && !isNaN(actualPrice) ? actualPrice : null,
+              status: String(w.status || "DESEJO"),
+              priority: String(w.priority || "ALTA"),
+              productUrl: w.productUrl ? String(w.productUrl) : null,
+              notes: w.notes ? String(w.notes) : null,
             },
-          }).catch(() => null);
+          }).catch((e) => console.error("Wishlist create error:", e));
           syncedWishlist++;
         }
       }
@@ -234,27 +229,26 @@ export async function POST(req: Request) {
     // 7. Chores (Tarefas)
     if (chores && Array.isArray(chores)) {
       for (const ch of chores) {
-        if (!ch.title) continue;
-        const existing = await prisma.chore.findFirst({
-          where: {
-            OR: [
-              { id: ch.id },
-              { title: ch.title },
-            ],
-          },
-        });
+        if (!ch || !ch.title) continue;
+        let existing = null;
+        if (ch.id) {
+          existing = await prisma.chore.findUnique({ where: { id: String(ch.id) } }).catch(() => null);
+        }
+        if (!existing) {
+          existing = await prisma.chore.findFirst({ where: { title: String(ch.title) } }).catch(() => null);
+        }
 
         if (!existing) {
           const uId = ch.assignedToId ? resolveUserId(ch.assignedToId, ch.assignedTo?.name) : null;
           await prisma.chore.create({
             data: {
               apartmentId: dbApe.id,
-              title: ch.title,
+              title: String(ch.title),
               assignedToId: uId,
-              frequency: ch.frequency || "SEMANAL",
+              frequency: String(ch.frequency || "SEMANAL"),
               isDone: Boolean(ch.isDone),
             },
-          }).catch(() => null);
+          }).catch((e) => console.error("Chore create error:", e));
           syncedChores++;
         }
       }
@@ -270,8 +264,12 @@ export async function POST(req: Request) {
         chores: syncedChores,
       },
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Sync error:", error);
-    return NextResponse.json({ error: "Erro na sincronização" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Erro na sincronização", details: error?.message || String(error) },
+      { status: 500 }
+    );
   }
 }
+
