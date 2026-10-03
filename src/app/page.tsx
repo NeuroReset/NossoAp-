@@ -59,7 +59,10 @@ export default function DashboardPage() {
       const local = getLocalData();
       
       // Tentativa de buscar no servidor se disponível
-      const res = await fetch("/api/dashboard", { cache: "no-store" });
+      const res = await fetch("/api/dashboard?t=" + Date.now(), {
+        cache: "no-store",
+        headers: { "Pragma": "no-cache", "Cache-Control": "no-cache" },
+      });
       if (res.ok) {
         const json = await res.json();
         if (json && json.apartment) {
@@ -107,7 +110,10 @@ export default function DashboardPage() {
       });
       const syncJson = await syncRes.json().catch(() => null);
 
-      const res = await fetch("/api/dashboard", { cache: "no-store" });
+      const res = await fetch("/api/dashboard?t=" + Date.now(), {
+        cache: "no-store",
+        headers: { "Pragma": "no-cache", "Cache-Control": "no-cache" },
+      });
       if (res.ok) {
         const json = await res.json();
         if (json && json.apartment) {

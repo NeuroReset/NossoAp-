@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
 
 async function getOrCreateApartmentAndUsers() {
   let apartment = await prisma.apartment.findFirst();
@@ -43,7 +45,6 @@ async function getOrCreateApartmentAndUsers() {
 
     users = [user1, user2];
 
-    // Criar metas base
     const defaultGoals = [
       { title: "Entrada do Imóvel", description: "Reserva para entrada do financiamento", category: "ENTRADA", targetAmount: 0.0, color: "#10b981", icon: "KeyRound" },
       { title: "Reforma & Obra", description: "Pisos, iluminação, pintura e reparos", category: "REFORMA", targetAmount: 0.0, color: "#f59e0b", icon: "Hammer" },
@@ -221,7 +222,6 @@ export async function GET() {
       .filter((e) => !e.isPaid)
       .reduce((sum, e) => sum + e.amount, 0);
 
-    // Balance between User 1 and User 2 (if 2 users exist)
     let balances = {
       userA: users[0] || null,
       userB: users[1] || null,
@@ -267,43 +267,60 @@ export async function GET() {
     // 8. Chores Summary
     const choresCompletedCount = chores.filter((c) => c.isDone).length;
 
-    return NextResponse.json({
-      apartment: {
-        id: apartment.id,
-        name: apartment.name,
-        address: apartment.address,
-        targetDate: apartment.targetDate ? apartment.targetDate.toISOString() : null,
-        totalBudget: apartment.totalBudget,
-        inviteCode: apartment.inviteCode,
+    return NextResponse.json(
+      {
+        apartment: {
+          id: apartment.id,
+          name: apartment.name,
+          address: apartment.address,
+          targetDate: apartment.targetDate ? apartment.targetDate.toISOString() : null,
+          totalBudget: apartment.totalBudget,
+          inviteCode: apartment.inviteCode,
+        },
+        users,
+        summary: {
+          totalSaved,
+          totalBudget,
+          budgetProgressPercent,
+          currentMonthTotal,
+          currentMonthTarget,
+          currentMonthProgressPercent,
+          totalExpensesThisMonth,
+          pendingExpensesThisMonth,
+          wishlistTotalEstimated,
+          wishlistTotalSpent,
+          wishlistItemsPurchasedCount,
+          wishlistItemsTotalCount: wishlist.length,
+          choresCompletedCount,
+          choresTotalCount: chores.length,
+        },
+        partners,
+        goals,
+        monthlyHistory,
+        recentContributions: allContributions,
+        expenses,
+        wishlist,
+        chores,
+        balances,
       },
-      users,
-      summary: {
-        totalSaved,
-        totalBudget,
-        budgetProgressPercent,
-        currentMonthTotal,
-        currentMonthTarget,
-        currentMonthProgressPercent,
-        totalExpensesThisMonth,
-        pendingExpensesThisMonth,
-        wishlistTotalEstimated,
-        wishlistTotalSpent,
-        wishlistItemsPurchasedCount,
-        wishlistItemsTotalCount: wishlist.length,
-        choresCompletedCount,
-        choresTotalCount: chores.length,
-      },
-      partners,
-      goals,
-      monthlyHistory,
-      recentContributions: allContributions.slice(0, 8),
-      expenses,
-      wishlist,
-      chores,
-      balances,
-    });
+      {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
+          Pragma: "no-cache",
+          Expires: "0",
+        },
+      }
+    );
   } catch (error) {
     console.error("Dashboard error:", error);
-    return NextResponse.json({ error: "Erro ao buscar dados do painel" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Erro ao buscar dados do painel" },
+      {
+        status: 500,
+        headers: {
+          "Cache-Control": "no-store, max-age=0",
+        },
+      }
+    );
   }
 }
