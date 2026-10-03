@@ -68,6 +68,20 @@ export default function DashboardPage() {
           setData(recalculated);
           saveLocalData(recalculated);
           setLoading(false);
+
+          // Se o dispositivo local tinha dados que o banco ainda não tinha, sincroniza para a nuvem
+          if (
+            (local.recentContributions && local.recentContributions.length > 0) ||
+            (local.expenses && local.expenses.length > 0) ||
+            (local.wishlist && local.wishlist.length > 0) ||
+            (local.chores && local.chores.length > 0)
+          ) {
+            fetch("/api/sync", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(local),
+            }).catch(() => null);
+          }
           return;
         }
       }
