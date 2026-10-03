@@ -25,6 +25,7 @@ import { DepositModal } from "@/components/DepositModal";
 import { GoalModal } from "@/components/GoalModal";
 import { WishlistModal } from "@/components/WishlistModal";
 import { ExpenseModal } from "@/components/ExpenseModal";
+import { BackupModal } from "@/components/BackupModal";
 import { getLocalData, saveLocalData, recalculateDashboard, mergeServerAndLocal } from "@/lib/storage";
 import { parseBRL } from "@/lib/utils";
 
@@ -42,6 +43,7 @@ export default function DashboardPage() {
   const [goalToEdit, setGoalToEdit] = useState<Goal | null>(null);
   const [wishlistModalOpen, setWishlistModalOpen] = useState(false);
   const [expenseModalOpen, setExpenseModalOpen] = useState(false);
+  const [backupModalOpen, setBackupModalOpen] = useState(false);
 
   // Check auth session
   useEffect(() => {
@@ -371,6 +373,7 @@ export default function DashboardPage() {
         onOpenWishlistModal={() => setWishlistModalOpen(true)}
         onOpenExpenseModal={() => setExpenseModalOpen(true)}
         onSync={handleManualSync}
+        onOpenBackupModal={() => setBackupModalOpen(true)}
         onLockApp={handleLockApp}
       />
 
@@ -595,6 +598,12 @@ export default function DashboardPage() {
         isOpen={expenseModalOpen}
         onClose={() => setExpenseModalOpen(false)}
         users={currentData.users}
+        onSuccess={fetchData}
+      />
+
+      <BackupModal
+        isOpen={backupModalOpen}
+        onClose={() => setBackupModalOpen(false)}
         onSuccess={fetchData}
       />
     </div>

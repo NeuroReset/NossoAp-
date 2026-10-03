@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Building2, Plus, Sparkles, KeyRound, LogOut, Cloud, RefreshCw, Check } from "lucide-react";
+import { Building2, Plus, Sparkles, KeyRound, LogOut, Cloud, RefreshCw, Check, Database } from "lucide-react";
 import { Apartment, User } from "@/types";
 import { formatDate } from "@/lib/utils";
 
@@ -13,6 +13,7 @@ interface HeaderProps {
   onOpenWishlistModal: () => void;
   onOpenExpenseModal: () => void;
   onSync?: () => Promise<void>;
+  onOpenBackupModal?: () => void;
   onLockApp?: () => void;
 }
 
@@ -21,6 +22,7 @@ export function Header({
   users,
   onOpenDepositModal,
   onSync,
+  onOpenBackupModal,
   onLockApp,
 }: HeaderProps) {
   const [syncing, setSyncing] = useState(false);
@@ -95,6 +97,18 @@ export function Header({
                     <span className="hidden sm:inline">{syncing ? "Sincronizando..." : "Sincronizar"}</span>
                   </>
                 )}
+              </button>
+            )}
+
+            {/* Backup / Migration Button */}
+            {onOpenBackupModal && (
+              <button
+                onClick={onOpenBackupModal}
+                className="flex items-center gap-1.5 px-3 py-1.5 sm:py-2 rounded-xl text-xs font-semibold bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 transition-all"
+                title="Migração e Backup (transferir dados e salvar no banco)"
+              >
+                <Database className="w-3.5 h-3.5 text-blue-600" />
+                <span className="hidden sm:inline">Nuvem / Backup</span>
               </button>
             )}
 
