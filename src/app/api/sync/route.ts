@@ -8,6 +8,12 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { apartment, users, goals, recentContributions, expenses, wishlist, chores } = body;
 
+    let syncedGoals = 0;
+    let syncedContributions = 0;
+    let syncedExpenses = 0;
+    let syncedWishlist = 0;
+    let syncedChores = 0;
+
     // 1. Apartment
     let dbApe = await prisma.apartment.findFirst();
     if (!dbApe) {
@@ -19,6 +25,11 @@ export async function POST(req: Request) {
           inviteCode: apartment?.inviteCode || "GABRIEL-CAROL",
         },
       });
+    } else if (apartment?.totalBudget && parseFloat(apartment.totalBudget) > 0) {
+      await prisma.apartment.update({
+        where: { id: dbApe.id },
+        data: { totalBudget: parseFloat(apartment.totalBudget) },
+      }).catch(() => null);
     }
 
     // 2. Users (Gabriel & Carol)
@@ -46,7 +57,7 @@ export async function POST(req: Request) {
     } else {
       for (const u of dbUsers) {
         const matchingLocal = users?.find((lu: any) => lu.name?.toLowerCase().includes(u.name.toLowerCase()));
-        if (matchingLocal && matchingLocal.monthlyTarget !== undefined && matchingLocal.monthlyTarget > 0) {
+        if (matchingLocal && matchingLocal.monthlyTarget !== undefined && parseFloat(matchingLocal.monthlyTarget) > 0) {
           await prisma.user.update({
             where: { id: u.id },
             data: { monthlyTarget: parseFloat(matchingLocal.monthlyTarget) },
@@ -64,9 +75,10 @@ export async function POST(req: Request) {
       return gabriel.id;
     };
 
-    // 3. Goals
+    // 3. Goals (Metas / Caixinhas)
     if (goals && Array.isArray(goals)) {
       for (const g of goals) {
+        const targetAmount = parseFloat(g.targetAmount || 0);
         const existing = await prisma.goal.findFirst({
           where: {
             OR: [
@@ -75,6 +87,7 @@ export async function POST(req: Request) {
             ],
           },
         });
+
         if (!existing) {
           await prisma.goal.create({
             data: {
@@ -82,23 +95,25 @@ export async function POST(req: Request) {
               title: g.title,
               description: g.description || null,
               category: g.category || "GERAL",
-              targetAmount: parseFloat(g.targetAmount || 0),
+              targetAmount,
               color: g.color || "#10b981",
               icon: g.icon || "PiggyBank",
               deadline: g.deadline ? new Date(g.deadline) : null,
               isCompleted: Boolean(g.isCompleted),
             },
           }).catch(() => null);
-        } else if (g.targetAmount > 0 || g.deadline || g.description) {
+          syncedGoals++;
+        } else {
           await prisma.goal.update({
             where: { id: existing.id },
             data: {
-              ...(g.targetAmount > 0 && { targetAmount: parseFloat(g.targetAmount) }),
+              ...(targetAmount > 0 && { targetAmount }),
               ...(g.deadline && { deadline: new Date(g.deadline) }),
               ...(g.description && { description: g.description }),
               ...(g.color && { color: g.color }),
             },
           }).catch(() => null);
+          syncedGoals++;
         }
       }
     }
@@ -143,6 +158,7 @@ export async function POST(req: Request) {
               notes: c.notes || null,
             },
           }).catch(() => null);
+          syncedContributions++;
         }
       }
     }
@@ -177,6 +193,7 @@ export async function POST(req: Request) {
               splitType: e.splitType || "EQUAL_50_50",
             },
           }).catch(() => null);
+          syncedExpenses++;
         }
       }
     }
@@ -209,6 +226,7 @@ export async function POST(req: Request) {
               notes: w.notes || null,
             },
           }).catch(() => null);
+          syncedWishlist++;
         }
       }
     }
@@ -237,11 +255,21 @@ export async function POST(req: Request) {
               isDone: Boolean(ch.isDone),
             },
           }).catch(() => null);
+          syncedChores++;
         }
       }
     }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({
+      success: true,
+      counts: {
+        goals: syncedGoals,
+        contributions: syncedContributions,
+        expenses: syncedExpenses,
+        wishlist: syncedWishlist,
+        chores: syncedChores,
+      },
+    });
   } catch (error) {
     console.error("Sync error:", error);
     return NextResponse.json({ error: "Erro na sincronização" }, { status: 500 });

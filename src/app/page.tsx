@@ -100,11 +100,13 @@ export default function DashboardPage() {
   const handleManualSync = async () => {
     try {
       const local = getLocalData();
-      await fetch("/api/sync", {
+      const syncRes = await fetch("/api/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(local),
       });
+      const syncJson = await syncRes.json().catch(() => null);
+
       const res = await fetch("/api/dashboard", { cache: "no-store" });
       if (res.ok) {
         const json = await res.json();
@@ -115,8 +117,16 @@ export default function DashboardPage() {
           saveLocalData(recalculated);
         }
       }
+
+      if (syncJson?.counts) {
+        const c = syncJson.counts;
+        alert(`Sincronização com o banco Supabase concluída!\n\n• Aportes enviados: ${c.contributions}\n• Metas atualizadas: ${c.goals}\n• Contas enviadas: ${c.expenses}\n• Itens do Enxoval: ${c.wishlist}\n• Tarefas: ${c.chores}`);
+      } else {
+        alert("Sincronização com o Supabase concluída com sucesso!");
+      }
     } catch (e) {
       console.warn("Erro ao sincronizar manualmente:", e);
+      alert("Erro ao sincronizar com o banco. Tente novamente.");
     }
   };
 
