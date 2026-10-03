@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import { X, PiggyBank, Sparkles } from "lucide-react";
 import confetti from "canvas-confetti";
 import { User as UserType, Goal, Contribution } from "@/types";
-import { getLocalData, saveLocalData, recalculateDashboard } from "@/lib/storage";
+import { getLocalData, saveLocalData, recalculateDashboard, findCanonicalUser } from "@/lib/storage";
 
 interface DepositModalProps {
   isOpen: boolean;
@@ -25,49 +25,66 @@ export function DepositModal({
   initialGoalId,
   onSuccess,
 }: DepositModalProps) {
-  const [userId, setUserId] = useState(initialUserId || users[0]?.id || "");
-  const [goalId, setGoalId] = useState(initialGoalId || "");
+  const [selectedUserId, setSelectedUserId] = useState<string>("");
+  const [goalId, setGoalId] = useState<string>("");
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (initialUserId) setUserId(initialUserId);
-    if (initialGoalId) setGoalId(initialGoalId);
-    else if (users.length > 0 && !userId) setUserId(users[0].id);
-  }, [initialUserId, initialGoalId, users, userId]);
+    if (isOpen) {
+      if (initialUserId) {
+        setSelectedUserId(initialUserId);
+      } else if (users.length > 0) {
+        setSelectedUserId(users[0].id);
+      }
+      if (initialGoalId) {
+        setGoalId(initialGoalId);
+      } else {
+        setGoalId("");
+      }
+      setDate(new Date().toISOString().split("T")[0]);
+    }
+  }, [isOpen, initialUserId, initialGoalId, users]);
 
   if (!isOpen) return null;
 
+  const activeUserId = selectedUserId || users[0]?.id || "";
+  const selectedUser = findCanonicalUser(users, activeUserId) || users[0];
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!userId || !amount) return;
+    if (!amount) return;
+
+    const parsedAmount = parseFloat(amount.replace(",", "."));
+    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+      alert("Informe um valor de aporte válido.");
+      return;
+    }
 
     setLoading(true);
-    const parsedAmount = parseFloat(amount.replace(",", "."));
-    const selectedUser = users.find((u) => u.id === userId) || users[0];
     const selectedGoal = goals.find((g) => g.id === goalId) || null;
 
     const newContrib: Contribution = {
       id: "contrib-" + Date.now(),
       apartmentId: "default-ape",
-      userId,
+      userId: selectedUser.id,
       user: selectedUser,
       goalId: goalId || null,
       goal: selectedGoal,
       amount: parsedAmount,
-      date: date ? new Date(date).toISOString() : new Date().toISOString(),
-      notes: notes || null,
+      date: date ? `${date}T12:00:00.000Z` : new Date().toISOString(),
+      notes: notes.trim() || null,
     };
 
-    // Save locally immediately
+    // 1. Atualiza e salva no storage local com recálculo imediato
     const local = getLocalData();
     local.recentContributions = [newContrib, ...(local.recentContributions || [])];
     const recalculated = recalculateDashboard(local);
     saveLocalData(recalculated);
 
-    // Trigger confetti
+    // 2. Efeito de celebração
     try {
       confetti({
         particleCount: 100,
@@ -82,20 +99,23 @@ export function DepositModal({
     setNotes("");
     setLoading(false);
 
-    // Sync with API in background if possible
+    // 3. Sincroniza em background com o backend se disponível
     try {
       await fetch("/api/contributions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          userId,
+          userId: selectedUser.id,
+          userName: selectedUser.name,
           goalId: goalId || null,
           amount: parsedAmount,
-          date,
-          notes,
+          date: date || new Date().toISOString().split("T")[0],
+          notes: notes.trim() || null,
         }),
       });
-    } catch (err) {}
+    } catch (err) {
+      console.warn("Background API sync failed, persisted locally:", err);
+    }
   };
 
   return (
@@ -123,39 +143,51 @@ export function DepositModal({
 
         <form onSubmit={handleSubmit} className="p-4 sm:p-5 space-y-4">
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
+            <label className="block text-xs font-bold text-slate-700 mb-1.5">
               Quem está aportando?
             </label>
-            <div className="grid grid-cols-2 gap-2">
-              {users.map((u) => (
-                <button
-                  type="button"
-                  key={u.id}
-                  onClick={() => setUserId(u.id)}
-                  className={`flex items-center gap-2 p-2.5 rounded-xl border text-xs font-semibold transition-all ${
-                    userId === u.id
-                      ? "border-emerald-500 bg-emerald-50/50 text-emerald-900 shadow-sm"
-                      : "border-slate-200 hover:bg-slate-50 text-slate-700"
-                  }`}
-                >
-                  <div
-                    className="w-5 h-5 rounded-full text-[10px] text-white font-bold flex items-center justify-center"
-                    style={{ backgroundColor: u.avatarColor }}
+            <div className="grid grid-cols-2 gap-2.5">
+              {users.map((u) => {
+                const isSelected = selectedUser.id === u.id || selectedUser.name.toLowerCase() === u.name.toLowerCase();
+                const isCarol = u.name.toLowerCase().includes("carol");
+                
+                return (
+                  <button
+                    type="button"
+                    key={u.id}
+                    onClick={() => setSelectedUserId(u.id)}
+                    className={`flex items-center gap-2.5 p-3 rounded-xl border-2 text-xs font-bold transition-all ${
+                      isSelected
+                        ? isCarol
+                          ? "border-pink-500 bg-pink-50 text-pink-950 shadow-sm ring-2 ring-pink-500/20"
+                          : "border-blue-500 bg-blue-50 text-blue-950 shadow-sm ring-2 ring-blue-500/20"
+                        : "border-slate-200 hover:bg-slate-50 text-slate-600"
+                    }`}
                   >
-                    {u.name[0]}
-                  </div>
-                  <span>{u.name}</span>
-                </button>
-              ))}
+                    <div
+                      className="w-6 h-6 rounded-full text-xs text-white font-bold flex items-center justify-center shadow-sm"
+                      style={{ backgroundColor: u.avatarColor || (isCarol ? "#ec4899" : "#3b82f6") }}
+                    >
+                      {u.name[0]}
+                    </div>
+                    <div className="text-left">
+                      <div className="text-xs font-bold">{u.name}</div>
+                      <div className="text-[10px] text-slate-500 font-normal">
+                        {isSelected ? "Selecionado" : "Clique p/ escolher"}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
+            <label className="block text-xs font-bold text-slate-700 mb-1.5">
               Valor do Aporte (R$)
             </label>
             <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 font-bold text-sm">
+              <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 font-black text-base">
                 R$
               </div>
               <input
@@ -165,13 +197,13 @@ export function DepositModal({
                 placeholder="2.500,00"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                className="w-full pl-9 pr-3 py-2.5 border border-slate-200 rounded-xl text-slate-900 font-bold text-base focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                className="w-full pl-11 pr-3 py-3 border border-slate-200 rounded-xl text-slate-900 font-black text-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
+            <label className="block text-xs font-bold text-slate-700 mb-1.5">
               Caixinha / Meta de Destino (Opcional)
             </label>
             <select
@@ -190,25 +222,25 @@ export function DepositModal({
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Data</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">Data do Aporte</label>
               <input
                 type="date"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-xs bg-white focus:outline-none"
+                className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-xs bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">
                 Observação / Detalhe
               </label>
               <input
                 type="text"
-                placeholder="Ex: Bônus, economia do mês..."
+                placeholder="Ex: Salário, economia..."
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-xs focus:outline-none"
+                className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
               />
             </div>
           </div>
@@ -220,7 +252,7 @@ export function DepositModal({
               className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold shadow-md shadow-emerald-600/20 transition-all active:scale-[0.99] flex items-center justify-center gap-1.5"
             >
               <Sparkles className="w-4 h-4" />
-              <span>{loading ? "Salvando..." : "Confirmar Aporte"}</span>
+              <span>{loading ? "Salvando..." : `Confirmar Aporte de ${selectedUser.name}`}</span>
             </button>
           </div>
         </form>

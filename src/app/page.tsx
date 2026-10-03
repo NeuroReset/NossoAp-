@@ -25,7 +25,7 @@ import { DepositModal } from "@/components/DepositModal";
 import { GoalModal } from "@/components/GoalModal";
 import { WishlistModal } from "@/components/WishlistModal";
 import { ExpenseModal } from "@/components/ExpenseModal";
-import { getLocalData, saveLocalData, recalculateDashboard } from "@/lib/storage";
+import { getLocalData, saveLocalData, recalculateDashboard, mergeServerAndLocal } from "@/lib/storage";
 
 export default function DashboardPage() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
@@ -54,26 +54,31 @@ export default function DashboardPage() {
   const fetchData = async () => {
     try {
       setLoading(true);
-      // Try API first
+      const local = getLocalData();
+      
+      // Tentativa de buscar no servidor se disponível
       const res = await fetch("/api/dashboard", { cache: "no-store" });
       if (res.ok) {
         const json = await res.json();
         if (json && json.apartment) {
-          const recalculated = recalculateDashboard(json);
+          const merged = mergeServerAndLocal(json, local);
+          const recalculated = recalculateDashboard(merged);
           setData(recalculated);
           saveLocalData(recalculated);
+          setLoading(false);
           return;
         }
       }
     } catch (err) {
-      console.warn("API indisponível, usando armazenamento local:", err);
-    } finally {
-      // Fallback robusto garantido para armazenamento local
-      const local = getLocalData();
-      const recalculated = recalculateDashboard(local);
-      setData(recalculated);
-      setLoading(false);
+      console.warn("API fallback to local data:", err);
     }
+
+    // Carregamento local garantido
+    const local = getLocalData();
+    const recalculated = recalculateDashboard(local);
+    setData(recalculated);
+    saveLocalData(recalculated);
+    setLoading(false);
   };
 
   useEffect(() => {
@@ -100,11 +105,18 @@ export default function DashboardPage() {
   };
 
   const handleDepositSuccess = (newContrib?: any) => {
-    fetchData();
+    const local = getLocalData();
+    const recalculated = recalculateDashboard(local);
+    setData(recalculated);
+    saveLocalData(recalculated);
   };
 
   const handleUpdateUserTarget = async (userId: string, currentTarget: number) => {
-    const newVal = prompt("Digite o novo valor da meta mensal de aporte (R$):", currentTarget > 0 ? String(currentTarget) : "");
+    const currentData = data || getLocalData();
+    const targetUser = currentData.users.find((u) => u.id === userId || u.name.toLowerCase().includes(userId.toLowerCase()));
+    const userName = targetUser ? targetUser.name : "morador";
+
+    const newVal = prompt(`Definir meta mensal de aporte para ${userName} (R$):`, currentTarget > 0 ? String(currentTarget) : "");
     if (newVal === null) return;
     const parsed = parseFloat(newVal.replace(",", "."));
     if (isNaN(parsed) || parsed < 0) {
@@ -112,26 +124,30 @@ export default function DashboardPage() {
       return;
     }
 
-    if (data) {
-      const updatedUsers = data.users.map((u) => (u.id === userId ? { ...u, monthlyTarget: parsed } : u));
-      updateAndPersist({ ...data, users: updatedUsers });
-    }
+    const updatedUsers = currentData.users.map((u) => {
+      if (u.id === userId || u.name.toLowerCase() === userName.toLowerCase()) {
+        return { ...u, monthlyTarget: parsed };
+      }
+      return u;
+    });
+
+    updateAndPersist({ ...currentData, users: updatedUsers });
 
     try {
       await fetch("/api/users", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: userId, monthlyTarget: parsed }),
+        body: JSON.stringify({ id: userId, name: userName, monthlyTarget: parsed }),
       });
     } catch (e) {}
   };
 
   const handleDeleteContribution = async (id: string) => {
     if (!confirm("Deseja realmente remover este aporte?")) return;
-    if (data) {
-      const filtered = (data.recentContributions || []).filter((c) => c.id !== id);
-      updateAndPersist({ ...data, recentContributions: filtered });
-    }
+    const currentData = data || getLocalData();
+    const filtered = (currentData.recentContributions || []).filter((c) => c.id !== id);
+    updateAndPersist({ ...currentData, recentContributions: filtered });
+
     try {
       await fetch(`/api/contributions?id=${id}`, { method: "DELETE" });
     } catch (e) {}
@@ -139,10 +155,10 @@ export default function DashboardPage() {
 
   const handleDeleteGoal = async (id: string) => {
     if (!confirm("Deseja realmente excluir esta caixinha/meta?")) return;
-    if (data) {
-      const filtered = (data.goals || []).filter((g) => g.id !== id);
-      updateAndPersist({ ...data, goals: filtered });
-    }
+    const currentData = data || getLocalData();
+    const filtered = (currentData.goals || []).filter((g) => g.id !== id);
+    updateAndPersist({ ...currentData, goals: filtered });
+
     try {
       await fetch(`/api/goals?id=${id}`, { method: "DELETE" });
     } catch (e) {}
@@ -157,10 +173,9 @@ export default function DashboardPage() {
       return;
     }
 
-    if (data) {
-      const updatedGoals = data.goals.map((g) => (g.id === id ? { ...g, targetAmount: parsed } : g));
-      updateAndPersist({ ...data, goals: updatedGoals });
-    }
+    const currentData = data || getLocalData();
+    const updatedGoals = currentData.goals.map((g) => (g.id === id ? { ...g, targetAmount: parsed } : g));
+    updateAndPersist({ ...currentData, goals: updatedGoals });
 
     try {
       await fetch("/api/goals", {
@@ -173,20 +188,20 @@ export default function DashboardPage() {
 
   const handleDeleteExpense = async (id: string) => {
     if (!confirm("Deseja realmente excluir esta despesa?")) return;
-    if (data) {
-      const filtered = (data.expenses || []).filter((e) => e.id !== id);
-      updateAndPersist({ ...data, expenses: filtered });
-    }
+    const currentData = data || getLocalData();
+    const filtered = (currentData.expenses || []).filter((e) => e.id !== id);
+    updateAndPersist({ ...currentData, expenses: filtered });
+
     try {
       await fetch(`/api/expenses?id=${id}`, { method: "DELETE" });
     } catch (e) {}
   };
 
   const handleToggleExpensePaid = async (id: string, currentStatus: boolean) => {
-    if (data) {
-      const updatedExpenses = data.expenses.map((e) => (e.id === id ? { ...e, isPaid: !currentStatus } : e));
-      updateAndPersist({ ...data, expenses: updatedExpenses });
-    }
+    const currentData = data || getLocalData();
+    const updatedExpenses = currentData.expenses.map((e) => (e.id === id ? { ...e, isPaid: !currentStatus } : e));
+    updateAndPersist({ ...currentData, expenses: updatedExpenses });
+
     try {
       await fetch("/api/expenses", {
         method: "PATCH",
@@ -202,12 +217,12 @@ export default function DashboardPage() {
     actualPrice?: number,
     boughtById?: string
   ) => {
-    if (data) {
-      const updatedList = data.wishlist.map((item) =>
-        item.id === id ? { ...item, status: status as any, actualPrice: actualPrice ?? item.actualPrice, boughtById } : item
-      );
-      updateAndPersist({ ...data, wishlist: updatedList });
-    }
+    const currentData = data || getLocalData();
+    const updatedList = currentData.wishlist.map((item) =>
+      item.id === id ? { ...item, status: status as any, actualPrice: actualPrice ?? item.actualPrice, boughtById } : item
+    );
+    updateAndPersist({ ...currentData, wishlist: updatedList });
+
     try {
       await fetch("/api/wishlist", {
         method: "PATCH",
@@ -219,20 +234,20 @@ export default function DashboardPage() {
 
   const handleDeleteWishlistItem = async (id: string) => {
     if (!confirm("Remover este item da lista de compras?")) return;
-    if (data) {
-      const filtered = data.wishlist.filter((i) => i.id !== id);
-      updateAndPersist({ ...data, wishlist: filtered });
-    }
+    const currentData = data || getLocalData();
+    const filtered = currentData.wishlist.filter((i) => i.id !== id);
+    updateAndPersist({ ...currentData, wishlist: filtered });
+
     try {
       await fetch(`/api/wishlist?id=${id}`, { method: "DELETE" });
     } catch (e) {}
   };
 
   const handleToggleChore = async (id: string, currentDone: boolean) => {
-    if (data) {
-      const updatedChores = data.chores.map((c) => (c.id === id ? { ...c, isDone: !currentDone } : c));
-      updateAndPersist({ ...data, chores: updatedChores });
-    }
+    const currentData = data || getLocalData();
+    const updatedChores = currentData.chores.map((c) => (c.id === id ? { ...c, isDone: !currentDone } : c));
+    updateAndPersist({ ...currentData, chores: updatedChores });
+
     try {
       await fetch("/api/chores", {
         method: "PATCH",
@@ -243,18 +258,18 @@ export default function DashboardPage() {
   };
 
   const handleAddChore = async (title: string, assignedToId?: string) => {
+    const currentData = data || getLocalData();
     const newChore: Chore = {
       id: "chore-" + Date.now(),
-      apartmentId: data?.apartment.id || "default-ape",
+      apartmentId: currentData.apartment.id || "default-ape",
       title,
       assignedToId: assignedToId || null,
-      assignedTo: data?.users.find((u) => u.id === assignedToId) || null,
+      assignedTo: currentData.users.find((u) => u.id === assignedToId) || null,
       frequency: "SEMANAL",
       isDone: false,
     };
-    if (data) {
-      updateAndPersist({ ...data, chores: [newChore, ...(data.chores || [])] });
-    }
+    updateAndPersist({ ...currentData, chores: [newChore, ...(currentData.chores || [])] });
+
     try {
       await fetch("/api/chores", {
         method: "POST",
@@ -266,10 +281,10 @@ export default function DashboardPage() {
 
   const handleDeleteChore = async (id: string) => {
     if (!confirm("Deseja realmente remover esta tarefa?")) return;
-    if (data) {
-      const filtered = data.chores.filter((c) => c.id !== id);
-      updateAndPersist({ ...data, chores: filtered });
-    }
+    const currentData = data || getLocalData();
+    const filtered = currentData.chores.filter((c) => c.id !== id);
+    updateAndPersist({ ...currentData, chores: filtered });
+
     try {
       await fetch(`/api/chores?id=${id}`, { method: "DELETE" });
     } catch (e) {}
@@ -297,7 +312,7 @@ export default function DashboardPage() {
     );
   }
 
-  const currentData = data || getLocalData();
+  const currentData = data || recalculateDashboard(getLocalData());
 
   return (
     <div className="min-h-screen flex flex-col bg-[#f8fafc] pb-20 sm:pb-0">
@@ -410,6 +425,7 @@ export default function DashboardPage() {
               monthlyHistory={currentData.monthlyHistory}
               users={currentData.users}
               totalSaved={currentData.summary.totalSaved}
+              partners={currentData.partners}
             />
 
             {/* Grid with Goals and Chores */}

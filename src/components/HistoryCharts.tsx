@@ -14,20 +14,27 @@ import {
   Cell,
 } from "recharts";
 import { formatCurrency } from "@/lib/utils";
-import { User } from "@/types";
+import { User, PartnerMonthlyStatus } from "@/types";
 
 interface HistoryChartsProps {
   monthlyHistory: any[];
   users: User[];
   totalSaved: number;
+  partners?: PartnerMonthlyStatus[];
 }
 
-export function HistoryCharts({ monthlyHistory, users, totalSaved }: HistoryChartsProps) {
+export function HistoryCharts({ monthlyHistory, users, totalSaved, partners }: HistoryChartsProps) {
   const partnerColors = ["#3b82f6", "#ec4899", "#10b981", "#f59e0b"];
   const hasData = totalSaved > 0;
 
   const pieData = users.map((u, idx) => {
-    const userTotal = monthlyHistory.reduce((sum, item) => sum + (item[u.name] || 0), 0);
+    const partner = partners?.find(
+      (p) => p.user.id === u.id || p.user.name.toLowerCase() === u.name.toLowerCase()
+    );
+    const userTotal = partner
+      ? partner.historicalTotal
+      : monthlyHistory.reduce((sum, item) => sum + (item[u.name] || 0), 0);
+
     return {
       name: u.name,
       value: userTotal,
@@ -131,7 +138,12 @@ export function HistoryCharts({ monthlyHistory, users, totalSaved }: HistoryChar
 
         <div className="space-y-2 border-t border-slate-100 pt-3">
           {users.map((u) => {
-            const userTotal = monthlyHistory.reduce((sum, item) => sum + (item[u.name] || 0), 0);
+            const partner = partners?.find(
+              (p) => p.user.id === u.id || p.user.name.toLowerCase() === u.name.toLowerCase()
+            );
+            const userTotal = partner
+              ? partner.historicalTotal
+              : monthlyHistory.reduce((sum, item) => sum + (item[u.name] || 0), 0);
             const pct = totalSaved > 0 ? Math.round((userTotal / totalSaved) * 100) : 0;
             return (
               <div key={u.id} className="flex items-center justify-between text-xs">
