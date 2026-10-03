@@ -44,10 +44,9 @@ export async function POST(req: Request) {
       });
       dbUsers = [u1, u2];
     } else {
-      // Atualiza metas mensais se fornecidas
       for (const u of dbUsers) {
         const matchingLocal = users?.find((lu: any) => lu.name?.toLowerCase().includes(u.name.toLowerCase()));
-        if (matchingLocal && matchingLocal.monthlyTarget !== undefined) {
+        if (matchingLocal && matchingLocal.monthlyTarget !== undefined && matchingLocal.monthlyTarget > 0) {
           await prisma.user.update({
             where: { id: u.id },
             data: { monthlyTarget: parseFloat(matchingLocal.monthlyTarget) },
@@ -90,14 +89,14 @@ export async function POST(req: Request) {
               isCompleted: Boolean(g.isCompleted),
             },
           }).catch(() => null);
-        } else {
+        } else if (g.targetAmount > 0 || g.deadline || g.description) {
           await prisma.goal.update({
             where: { id: existing.id },
             data: {
-              targetAmount: parseFloat(g.targetAmount || existing.targetAmount),
-              deadline: g.deadline ? new Date(g.deadline) : existing.deadline,
-              description: g.description !== undefined ? g.description : existing.description,
-              color: g.color || existing.color,
+              ...(g.targetAmount > 0 && { targetAmount: parseFloat(g.targetAmount) }),
+              ...(g.deadline && { deadline: new Date(g.deadline) }),
+              ...(g.description && { description: g.description }),
+              ...(g.color && { color: g.color }),
             },
           }).catch(() => null);
         }
@@ -108,16 +107,19 @@ export async function POST(req: Request) {
     if (recentContributions && Array.isArray(recentContributions)) {
       for (const c of recentContributions) {
         const uId = resolveUserId(c.userId, c.user?.name);
+        const amount = parseFloat(c.amount);
+        if (amount <= 0) continue;
+
         const existing = await prisma.contribution.findFirst({
           where: {
-            AND: [
-              { userId: uId },
-              { amount: parseFloat(c.amount) },
-              { notes: c.notes || null },
+            OR: [
+              { id: c.id },
+              { AND: [{ userId: uId }, { amount }] },
             ],
           },
         });
-        if (!existing && c.amount > 0) {
+
+        if (!existing) {
           let validGoalId = null;
           if (c.goalId || c.goal?.title) {
             const dbGoal = await prisma.goal.findFirst({
@@ -136,7 +138,7 @@ export async function POST(req: Request) {
               apartmentId: dbApe.id,
               userId: uId,
               goalId: validGoalId,
-              amount: parseFloat(c.amount),
+              amount,
               date: c.date ? new Date(c.date) : new Date(),
               notes: c.notes || null,
             },
@@ -149,22 +151,26 @@ export async function POST(req: Request) {
     if (expenses && Array.isArray(expenses)) {
       for (const e of expenses) {
         const uId = resolveUserId(e.paidById, e.paidBy?.name);
+        const amount = parseFloat(e.amount);
+        if (amount <= 0) continue;
+
         const existing = await prisma.expense.findFirst({
           where: {
-            AND: [
-              { title: e.title },
-              { amount: parseFloat(e.amount) },
+            OR: [
+              { id: e.id },
+              { AND: [{ title: e.title }, { amount }] },
             ],
           },
         });
-        if (!existing && e.amount > 0) {
+
+        if (!existing) {
           await prisma.expense.create({
             data: {
               apartmentId: dbApe.id,
               paidById: uId,
               title: e.title,
               category: e.category || "OUTRO",
-              amount: parseFloat(e.amount),
+              amount,
               dueDate: e.dueDate ? new Date(e.dueDate) : new Date(),
               paidDate: e.isPaid ? new Date() : null,
               isPaid: Boolean(e.isPaid),
@@ -178,10 +184,17 @@ export async function POST(req: Request) {
     // 6. Wishlist (Enxoval)
     if (wishlist && Array.isArray(wishlist)) {
       for (const w of wishlist) {
+        if (!w.name) continue;
         const existing = await prisma.wishlistItem.findFirst({
-          where: { name: w.name },
+          where: {
+            OR: [
+              { id: w.id },
+              { name: w.name },
+            ],
+          },
         });
-        if (!existing && w.name) {
+
+        if (!existing) {
           await prisma.wishlistItem.create({
             data: {
               apartmentId: dbApe.id,
@@ -203,10 +216,17 @@ export async function POST(req: Request) {
     // 7. Chores (Tarefas)
     if (chores && Array.isArray(chores)) {
       for (const ch of chores) {
+        if (!ch.title) continue;
         const existing = await prisma.chore.findFirst({
-          where: { title: ch.title },
+          where: {
+            OR: [
+              { id: ch.id },
+              { title: ch.title },
+            ],
+          },
         });
-        if (!existing && ch.title) {
+
+        if (!existing) {
           const uId = ch.assignedToId ? resolveUserId(ch.assignedToId, ch.assignedTo?.name) : null;
           await prisma.chore.create({
             data: {
